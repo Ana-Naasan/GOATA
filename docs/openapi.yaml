@@ -3,7 +3,9 @@ info:
   title: Physio Motion Replay processing service
   version: 0.1.0
   description: |
-    Proposed contract; no running service or validated clinical model is claimed.
+    Local transfer and job mechanics are implemented. Real inference is not yet
+    integrated; accepted captures currently fail with PROCESSING_FAILED while
+    preserving their original files. No validated clinical model is claimed.
     The Quest app owns patient profiles and history. This service processes one
     immutable capture bundle at a time and returns versioned artifacts. Display
     names are not uploaded. A successful job means its result was saved, not that
@@ -19,7 +21,14 @@ info:
     including when Content-Length is absent. Reject encrypted archives, duplicate
     names, symlinks, directories, nested archives, traversal and unlisted members.
     Check file signatures, declared size and SHA-256 before processing. Media
-    decoders run with bounded resources. Configure and record any changed limit.
+    signature checks do not prove decoding or source-frame alignment. A real
+    inference adapter must validate those with bounded decoder resources before
+    model execution. ZIP64 and compression other than STORE/DEFLATE are rejected.
+    Sidecar/replay JSON is bounded to 16 MiB; total result output to 1 GiB.
+    One upload is validated at a time, with a 120-second receive deadline.
+    Multipart overhead is bounded to 64 KiB above ZIP+manifest limits; part
+    headers are bounded to 16 KiB. Private storage defaults to an 8 GiB budget
+    with space reserved before acceptance. Configure and record changed limits.
 
     Persist accepted job state before responding. On restart mark any pending or
     running job failed with WORKER_INTERRUPTED; preserve source evidence and
@@ -287,8 +296,11 @@ components:
         session_id: {type: string, format: uuid}
         patient_id: {type: string, format: uuid}
         test_type: {$ref: '#/components/schemas/TestType'}
-        protocol_id: {type: string, minLength: 1, maxLength: 80}
-        protocol_version: {type: string, minLength: 1, maxLength: 80}
+        protocol_id:
+          type: string
+          enum: [elk, rtk, barefoot]
+          description: Must match test_type. Provisional capture identifier; not an evaluated clinical protocol.
+        protocol_version: {type: string, const: '1.0'}
         capture_completed_at: {type: string, format: date-time}
         replay_take_id: {type: string, format: uuid}
         takes:
@@ -327,7 +339,10 @@ components:
         view: {type: string, enum: [front, left, right, rear, medial, other]}
         condition: {type: string, enum: [standing, seated, exercise, steady_hold]}
         side: {type: string, enum: [left, right, bilateral, not_applicable]}
-        duration_s: {type: number, exclusiveMinimum: 0}
+        duration_s:
+          type: number
+          exclusiveMinimum: 0
+          description: Recording duration; at least the last original PTS minus the clock origin. May include the final frame's presentation duration.
         video: {$ref: '#/components/schemas/InputFile'}
         frame_metadata: {$ref: '#/components/schemas/InputFile'}
       allOf:
@@ -589,7 +604,11 @@ components:
         The client rejects decoded replay bundles over 256 MiB before allocation.
         This decoded limit includes every required array/mask, not just ZIP size.
       properties:
-        artifact_id: {type: string, format: uuid}
+        artifact_id:
+          type: string
+          format: uuid
+          pattern: '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
+          description: Server-generated canonical lowercase UUID; use this exact ID for download.
         role:
           type: string
           enum: [replay_manifest, replay_binary, evidence_video, microscope_original, microscope_amplified, processing_settings, quality_report]

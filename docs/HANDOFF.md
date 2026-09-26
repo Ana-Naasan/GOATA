@@ -2,9 +2,9 @@
 
 ## Current state — September 26, 2026
 
-- Branch: `codex/bader-backend`. Ownership documentation landed through PR #5 at `0331367`; use `git log -1` for the current implementation commit.
-- Completed: Priority 1 capture/replay contract handoff, including executable schemas, strict semantic/binary validation and a labelled synthetic fixture.
-- Service, real reconstruction, Quest import/capture, automated ELK/RTK/foot assessment and microscope remain unfinished. M1 is not complete.
+- Branch: `codex/bader-backend`. Ownership documentation landed through PR #5 at `0331367`; fixture implementation `3fe90e6` landed through PR #6 at `0b326c9`. Use `git log -1` for the latest service/handoff commit.
+- Completed: Priority 1 capture/replay contract handoff and Priority 2 local upload/job/result/artifact mechanics. Both have tests and independent review.
+- Real reconstruction, Quest import/capture, automated ELK/RTK/foot assessment and microscope remain unfinished. M1 is not complete. Normal service processing explicitly fails until real inference is integrated.
 - Deadline: September 27, 2026, 10:00 a.m. EDT.
 - Repository: https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp
 
@@ -40,11 +40,41 @@ git diff --check
 - Installed and used: macOS arm64, Python 3.11.10, uv 0.11.21, jsonschema 4.26.0, pytest 9.1.1, pytest-cov 7.1.0 and Ruff 0.16.9. Exact dependency hashes/versions are in `uv.lock`.
 - Python service tooling is separate from the future CUDA/model environment. No GPU/headset/model execution was performed.
 
-## Next concrete task
+## Priority 2: local service mechanics
 
-Recheck `main`, then implement the existing four-route FastAPI service: authentication, bounded multipart/ZIP validation, private atomic persistence, idempotency, one worker, restart recovery and job-owned artifacts. Keep a synthetic successful worker in tests only. Actual processing must fail clearly until a real worker is available.
+Implemented `POST /v1/jobs`, job polling, completed result retrieval and authenticated artifact downloads. There are no user accounts/login screens. A deployment token protects this demo; patient names stay on Quest, while patient/session/take/job/artifact UUIDs preserve identity and provenance.
 
-Current service dependencies installed for that next task: FastAPI 0.141.1, Starlette 1.7.0, python-multipart 0.0.32, Uvicorn 0.54.0, HTTPX 0.28.1, PyYAML 6.0.3. They are installed tooling, not evidence of a working service.
+- Authenticated before parsing; bounded multipart receive/header/field limits, strict UTF-8, one validation slot and one processing worker.
+- ZIP validation checks bounded central/local records, member types, paths, counts, CRC, actual decompression lengths, hashes and sidecar identity. ZIP64 is unsupported; only STORE/DEFLATE are accepted.
+- Atomic private storage, canonical-content idempotency, capacity reservation, persisted stages, process lock and restart recovery. Original extracted recordings and sidecars remain intact; ZIP container bytes need not be retained.
+- Results validate job/patient/session/protocol/digest, source frames/intervals, complete assessment takes, feature availability, replay mapping and artifact bytes before publication. Worker input is copied independently of accepted metadata.
+- The normal worker returns an actionable `PROCESSING_FAILED` because inference is absent. Successful synthetic processing is confined to tests. No fixture fallback exists in the runnable service.
+- MP4 validation checks signatures only. Decoding, frame-count/PTS agreement, model timeouts and CUDA execution remain work for the actual inference adapter; no successful video-decoding proof is claimed.
+- CLI defaults to loopback, one process, and TLS arguments are mandatory for other listeners. Detailed setup and curl examples are in README.md. Runtime token: `PROCESSING_TOKEN`; private directory: `PROCESSING_DATA_DIR` (default `var/processing`).
+- Provisional capture IDs are `elk`, `rtk`, `barefoot`, matching test type, at version `1.0`. These are not clinically evaluated protocol definitions. API contract documents every input/output/storage ceiling.
+
+### Final verification
+
+```sh
+uv run --locked pytest --cov=processing --cov-report=term-missing -q
+uv run --locked ruff check processing tests
+uv run --locked pip-audit --progress-spinner off
+npm exec --yes --package=@redocly/cli@2.54.3 -- redocly lint docs/openapi.yaml --extends=minimal
+git diff --check
+```
+
+- **189 tests passed; 94.30% branch-inclusive coverage** across all processing modules; no modules are excluded. Remaining uncovered paths include some CLI argument errors and exceptional storage/cleanup cases.
+- A real loopback TCP test exercised upload → polling → result → authenticated artifact download → service restart → same-key retry. Its worker and inputs are explicitly synthetic; it establishes backend mechanics only.
+- Lint, OpenAPI validation and whitespace checks passed. Dependency audit found no known vulnerabilities.
+- Test output has one upstream Starlette warning that its HTTPX TestClient integration is deprecated. Tests pass on the locked versions; dependency replacement was not needed for this handoff.
+- Independent code, Python and static security reviews completed. Regressions were reproduced before fixing post-rename fsync/idempotency failure, accepted-evidence aliasing, metadata publication limits, uppercase artifact IDs, interrupted-take assessment, and valid DEFLATE buffering at the chunk boundary.
+- Installed/used service versions: FastAPI 0.141.1, Starlette 1.7.0, python-multipart 0.0.32, Uvicorn 0.54.0, HTTPX 0.28.1 and PyYAML 6.0.3. Python and all exact dependency hashes remain recorded above/in `uv.lock`.
+
+## Next concrete task and dependency gate
+
+The last inspected `main` was `0b326c9`, containing the fixture handoff but no `processing/reconstruction`, `processing/analysis` or `quest` implementation. Recheck main after this service PR lands. Integrate Mohammad's verified command/output only when it is on main, then export real geometry using the proven source coordinate/time mapping. Integrate Hamza's real capture/importer only when that dependency is on main.
+
+Until then, the independent deliverables in this plan are complete. Do not invent an inference adapter, model topology, exercise label set, camera calibration or microscope algorithm to bypass a missing dependency.
 
 ## Required integrations still blocked/unverified
 
