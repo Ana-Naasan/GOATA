@@ -394,11 +394,35 @@ Proposed states are pending, running, succeeded and failed. UI stages map to pre
 
 Use a UUID idempotency key for submission. Retrying the same submission must return the same job when its content matches. Reusing a key with different content returns a conflict. A deliberate new processing attempt gets a new key/result version while keeping original media and session identity.
 
+The first service implementation uses provisional `protocol_id` values `elk`,
+`rtk` and `barefoot`, matching `test_type`, with `protocol_version: "1.0"`.
+These identify the capture contract, not evaluated clinical protocols or
+required-view decisions. Revise them with actual protocol evidence when the
+model/capture work reaches `main`. Recording duration must cover the last
+source PTS offset and may include its final frame's presentation duration.
+
 Persist input and job metadata before acknowledging submission. Use atomic file replacement for state/results. Mark interrupted in-flight jobs failed with `WORKER_INTERRUPTED` after a service restart; do not leave them running forever or claim success for partial output. A single active processing slot is enough; busy submissions receive 429 and retry guidance.
 
 For the demo, use the contract's bounded upload limits (proposed ceilings: 512 MiB compressed, 1 GiB expanded, 64 members, 8 takes). These are security limits, not recommended recording sizes. Enforce actual streamed/decompressed counts, not only caller headers. Validate ZIP paths, duplicate members, archive links, hashes and media type before model execution. Never accept arbitrary server paths or download URLs from the manifest. Bound model runtime and temporary disk use.
 
 Return an actionable error code and safe message; keep detailed stack traces in private logs. Do not log tokens or participant footage. Artifacts require the same authentication and job authorization checks as metadata. A demo deployment token is not a production multi-user access model.
+
+The local service entrypoint is `python -m processing`, using `PROCESSING_TOKEN`
+and `PROCESSING_DATA_DIR`. It defaults to loopback and requires TLS arguments
+for other listeners. Default private storage is `var/processing` with an 8 GiB
+budget, one upload-validation slot and one processing slot. Receive time is
+bounded to 120 seconds. Reserve space before acceptance; preserve accepted
+evidence when full. Result output is capped at 1 GiB and result JSON at 16 MiB.
+MP4 signature validation is implemented; bounded decoding and real frame/PTS
+checks remain gated on inference integration. Current normal processing ends
+with `PROCESSING_FAILED` explaining this missing capability.
+
+Internal worker output uses `replay_manifest.json` plus its three fixed binary
+filenames for replay. Other artifact files use their canonical lowercase UUID
+as filename. Publication checks the inventory, bytes, hashes, identities and
+original evidence before exposing files. The worker's capture object is a copy;
+the accepted input is retained independently. Interrupted takes may support
+inspection but cannot generate assessment findings.
 
 ### Result availability
 
