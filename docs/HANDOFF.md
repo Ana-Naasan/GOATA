@@ -7,7 +7,39 @@
 - **Original deadline:** September 27, 2026, 10:00 a.m. EDT.
 - **Repository:** https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp
 
-The repository was empty when this documentation task began. The user requested a complete portable spec and explicitly authorized committing/pushing it here. That request did not ask this session to implement the app, provision compute or upload participant recordings.
+The original documentation task produced the portable spec. On September 26 the user then authorized GitHub task allocation and separate branches for the team. This setup does not claim application implementation or authorize paid compute/deployment/participant uploads.
+
+## Team setup — September 26
+
+- Shared starting commit: `ab5bafa` (`docs: specify Quest physio demo and Codex handoff`).
+- Current local branch: `codex/bader-backend`, tracking its remote. Team-setup documentation is recorded on this branch; use `git log -1` for its resulting commit.
+- Four GitHub issues and four linked personal branches were created from `main`:
+  - Bader, [#1](https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp/issues/1): `codex/bader-backend`.
+  - Mohammad, [#2](https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp/issues/2): `codex/mohammad-ml`.
+  - Hamza, [#3](https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp/issues/3): `codex/hamza-quest`.
+  - Mustafa, [#4](https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp/issues/4): `codex/mustafa-design`.
+- Issues contain ordered tasks, disjoint file ownership, handoffs and exact first-checkout commands. `AGENTS.md` records the same ownership boundaries. No scheduled checkpoints were added.
+- Bader and Mustafa are assignable collaborators. GitHub lists existing pending write invitations for `MohammadESteitieh` and `HamzaAlsarakbi`; their issues name the owners but cannot receive those assignees until acceptance. Recheck before assigning; do not duplicate the invitations.
+- Main protection now requires pull requests, applies to administrators, permits zero required approvals, and disallows force-pushes/deletion. No nonexistent status checks were required. Automatic deletion of merged branches was already disabled and remains disabled.
+- Only Bader's local checkout was switched. Other teammates must accept invitations where needed and run their issue's checkout commands; remote branch creation does not verify their local state.
+- The user reports that Quest hardware and GPU access are ready. Actual GPU model/runtime, body assets, headset camera build and model execution have not been verified in this checkout.
+
+Verification commands executed successfully:
+
+```sh
+gh api repos/B2707/HTH-3-sarakbi-asadi-steitieh-grp/collaborators --paginate
+gh api repos/B2707/HTH-3-sarakbi-asadi-steitieh-grp/invitations
+gh api repos/B2707/HTH-3-sarakbi-asadi-steitieh-grp/assignees --paginate
+gh issue create --repo B2707/HTH-3-sarakbi-asadi-steitieh-grp --title '<owner task>' --body-file '<reviewed task file>'
+gh issue develop 1 --repo B2707/HTH-3-sarakbi-asadi-steitieh-grp --base main --name codex/bader-backend
+gh issue develop 2 --repo B2707/HTH-3-sarakbi-asadi-steitieh-grp --base main --name codex/mohammad-ml
+gh issue develop 3 --repo B2707/HTH-3-sarakbi-asadi-steitieh-grp --base main --name codex/hamza-quest
+gh issue develop 4 --repo B2707/HTH-3-sarakbi-asadi-steitieh-grp --base main --name codex/mustafa-design
+git fetch origin
+git switch --track origin/codex/bader-backend
+```
+
+The issue-create line abbreviates the four owner-specific title/body-file arguments; Bader and Mustafa were also assigned to their respective issues. Protection was configured through GitHub's branch-protection API and checked from its response. These are repository-setup checks, not application/device/model tests.
 
 Read `SPEC.md` for all accepted decisions and `openapi.yaml` for the proposed service contract. This handoff records actual progress, not intended architecture.
 
@@ -59,7 +91,7 @@ Then inspect Unity installations and any manifests that actually exist. There is
 
 ## Risks to address first
 
-1. Hardware/compute and model assets are unverified. The user mentioned sponsor compute, but no provider/GPU/credentials have been confirmed.
+1. The user reports Quest and GPU access ready; the concrete runtime, model assets and end-to-end compatibility are still unverified.
 2. GVHMR's inspected demo assumes 30 FPS and estimated intrinsics in relevant paths. Preserve source timing and verify camera calibration integration.
 3. KERAAL ELK/RTK are seated protocols. Use the actual annotation guide, not generic standing exercise heuristics.
 4. Dataset skeletons and Quest/model joints may differ. Establish a tested mapping or shared feature extraction.
