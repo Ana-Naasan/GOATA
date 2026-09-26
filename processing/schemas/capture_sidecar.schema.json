@@ -1,0 +1,359 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "take_id",
+    "adapter",
+    "image",
+    "camera",
+    "clock",
+    "frames",
+    "capture"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "take_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "width_px",
+        "height_px",
+        "rotation_degrees",
+        "mirrored"
+      ],
+      "properties": {
+        "width_px": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height_px": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rotation_degrees": {
+          "enum": [
+            0,
+            90,
+            180,
+            270
+          ]
+        },
+        "mirrored": {
+          "type": "boolean"
+        }
+      }
+    },
+    "camera": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "calibration_status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "calibration_status": {
+          "type": "string",
+          "enum": [
+            "calibrated",
+            "estimated",
+            "unavailable"
+          ]
+        },
+        "intrinsics": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "fx",
+            "fy",
+            "cx",
+            "cy"
+          ],
+          "properties": {
+            "fx": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "fy": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "cx": {
+              "type": "number"
+            },
+            "cy": {
+              "type": "number"
+            }
+          }
+        },
+        "distortion_model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "distortion_coefficients": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 0,
+          "maxItems": 16
+        },
+        "calibration_note": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        }
+      },
+      "dependentRequired": {
+        "distortion_model": [
+          "distortion_coefficients"
+        ],
+        "distortion_coefficients": [
+          "distortion_model"
+        ]
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "calibration_status": {
+                "const": "unavailable"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "intrinsics"
+                  ]
+                },
+                {
+                  "required": [
+                    "distortion_model"
+                  ]
+                }
+              ]
+            }
+          },
+          "else": {
+            "required": [
+              "intrinsics"
+            ]
+          }
+        }
+      ]
+    },
+    "clock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "unit",
+        "origin_pts_ns"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "unit": {
+          "const": "nanoseconds"
+        },
+        "origin_pts_ns": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$",
+          "maxLength": 30
+        }
+      }
+    },
+    "frames": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "frame_id",
+          "pts_ns",
+          "image_valid"
+        ],
+        "properties": {
+          "frame_id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pts_ns": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "maxLength": 30
+          },
+          "image_valid": {
+            "type": "boolean"
+          },
+          "camera_pose": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "position_m",
+              "rotation_xyzw",
+              "coordinate_system",
+              "pose_time_ns",
+              "tracking_valid",
+              "alignment_method"
+            ],
+            "properties": {
+              "position_m": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "rotation_xyzw": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 4,
+                "maxItems": 4
+              },
+              "coordinate_system": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "pose_time_ns": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$",
+                "maxLength": 30
+              },
+              "tracking_valid": {
+                "type": "boolean"
+              },
+              "alignment_method": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              }
+            }
+          }
+        }
+      },
+      "minItems": 1
+    },
+    "capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "view",
+        "condition",
+        "side",
+        "interrupted",
+        "gaps"
+      ],
+      "properties": {
+        "view": {
+          "type": "string",
+          "enum": [
+            "front",
+            "left",
+            "right",
+            "rear",
+            "medial",
+            "other"
+          ]
+        },
+        "condition": {
+          "type": "string",
+          "enum": [
+            "standing",
+            "seated",
+            "exercise",
+            "steady_hold"
+          ]
+        },
+        "side": {
+          "type": "string",
+          "enum": [
+            "left",
+            "right",
+            "bilateral",
+            "not_applicable"
+          ]
+        },
+        "interrupted": {
+          "type": "boolean"
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "start_pts_ns",
+              "end_pts_ns",
+              "reason"
+            ],
+            "properties": {
+              "start_pts_ns": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$",
+                "maxLength": 30
+              },
+              "end_pts_ns": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$",
+                "maxLength": 30
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              }
+            }
+          },
+          "minItems": 0
+        }
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:physio-motion-replay:capture-sidecar:1.0",
+  "title": "Capture sidecar v1.0",
+  "description": "Original capture IDs and PTS; semantic checks are implemented by validate_sidecar. All camera intrinsics describe the stored image; document resizing/cropping in calibration_note."
+}

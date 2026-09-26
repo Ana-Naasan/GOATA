@@ -314,6 +314,14 @@ Freeze these sidecar field names before separate capture/processing work starts:
 
 If calibration or poses are unavailable, record that state and omit the unavailable numbers. Validate intrinsics as finite with positive focal lengths and require monotonic source times. Original frames may be rejected downstream without renumbering them. After inference resampling, retain a separate map to the original frames/times; a resampled frame ID never replaces a source ID.
 
+The executable sidecar schema is `processing/schemas/capture_sidecar.schema.json`.
+Sidecar and replay-manifest JSON documents are each limited to 16 MiB before
+parsing. The upload manifest retains its separate 1 MiB limit.
+`capture.gaps` records source-clock intervals with decimal-string `start_pts_ns`,
+`end_pts_ns` and a `reason`. The synthetic sidecar under
+`tests/contracts/fixtures` demonstrates serialization only; it does not claim
+that the Quest camera adapter has been verified.
+
 ### 8.3 Replay package, version 1
 
 Use one fixed-topology surface with aligned vertex/joint frames. The following is a proposed exporter/importer contract to prove in milestone M1; do not build two animation formats at once.
@@ -342,6 +350,26 @@ Exporter converts model output once into a take-local frame with +X right, +Y up
 On import, validate counts, integer multiplication bounds, file sizes, index ranges, timestamp order, finite values and joint parents before allocation/rendering. Expected vertex bytes are `frame_count * vertex_count * 3 * 4`; joint bytes use joint count. Initial maximum decoded replay budget is 256 MiB, an input ceiling to tune after measurements, not a performance promise.
 
 Zero-filled invalid slots are never observations. Do not interpolate across missing segments as if measured; show a gap or mark the display interpolation explicitly. Analysis retains its own original samples and validity. Display downsampling, if needed, must retain source times and cannot replace analysis data.
+
+#### Executable replay contract
+
+`processing/schemas/replay_manifest.schema.json` fixes the JSON field names.
+`frame_valid` is a boolean per frame and `joint_valid` is a frame-major boolean
+matrix. Joint roots use parent index `-1`. `source_to_replay` contains 16 values
+in row-major order, acting on column vectors; translation occupies entries
+3, 7 and 11. The final row is `[0, 0, 0, 1]`.
+
+`source_clock` and decimal-string `source_pts_ns` preserve the original clock;
+`resampling_map` records inference-frame IDs alongside original frame IDs and
+PTS. Mapping entries do not establish correspondence between separate takes.
+Replay `gaps` contain `start_s`, `end_s` and `reason`. The three entries in
+`artifacts` identify the fixed binary filenames, UUIDs, encodings, lengths and
+SHA-256 hashes. HTTP clients resolve these UUIDs through the owning result.
+
+The supplied fixture has `synthetic: true`, illustrative joints and an identity
+source transform because it is generated directly in Unity coordinates. It
+establishes neither an anatomical joint mapping nor a transform for GVHMR.
+Those depend on Mohammad's actual output once available on `main`.
 
 ### 8.4 One playback clock
 
