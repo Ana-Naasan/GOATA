@@ -2,7 +2,27 @@
 
 A Meta Quest 3 physiotherapy demo: record a supported test, then walk around a translucent blue replay of the participant with an aligned skeleton and evidence-linked findings.
 
-**Current state: specification only. No Quest app, processing service, trained model or validated assessment has been implemented in this repository.**
+**Current state:** executable capture/replay contracts and a synthetic importer fixture. Real inference, the Quest app and assessment features remain unverified.
+
+## First handoff: capture and replay contracts
+
+From the repository root:
+
+```sh
+uv sync --locked --python 3.11
+uv run python -m processing.contracts validate tests/contracts/fixtures
+uv run pytest tests/contracts --cov=processing --cov-report=term-missing
+```
+
+The [fixture guide](tests/contracts/fixtures/README.md) describes the expected
+geometry, source times, masks and binary checksums. Hamza can use it to build the
+Unity importer without waiting for reconstruction. The fixture contains no
+participant recording or anatomical model. Regenerate a copy with
+`uv run python -m processing.contracts generate /tmp/physio-replay-fixture`.
+
+Executable schemas live in `processing/schemas`; semantic validation is in
+`processing/contracts.py`. The service Python environment is separate from
+Mohammad's model-specific environment.
 
 ## Start a new Codex session
 

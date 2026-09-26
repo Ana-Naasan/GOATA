@@ -1,121 +1,56 @@
 # Codex session handoff
 
-## Current state
+## Current state — September 26, 2026
 
-- **Last updated:** September 26, 2026.
-- **Phase:** documentation complete; implementation not started.
-- **Original deadline:** September 27, 2026, 10:00 a.m. EDT.
-- **Repository:** https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp
+- Branch: `codex/bader-backend`. Ownership documentation landed through PR #5 at `0331367`; use `git log -1` for the current implementation commit.
+- Completed: Priority 1 capture/replay contract handoff, including executable schemas, strict semantic/binary validation and a labelled synthetic fixture.
+- Service, real reconstruction, Quest import/capture, automated ELK/RTK/foot assessment and microscope remain unfinished. M1 is not complete.
+- Deadline: September 27, 2026, 10:00 a.m. EDT.
+- Repository: https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp
 
-The original documentation task produced the portable spec. On September 26 the user then authorized GitHub task allocation and separate branches for the team. This setup does not claim application implementation or authorize paid compute/deployment/participant uploads.
+## Working order
 
-## Team setup — September 26
+Prioritize work that unblocks teammates. Before each task inspect `main`; integrate teammate prerequisites only after they land there. When blocked, work on the next independent item. Keep changes in Bader-owned paths and preserve personal branches. Independent code, Python and security review plus passing checks are required before publishing implementation through a PR.
 
-- Shared starting commit: `ab5bafa` (`docs: specify Quest physio demo and Codex handoff`).
-- Current local branch: `codex/bader-backend`, tracking its remote. Team-setup documentation is recorded on this branch; use `git log -1` for its resulting commit.
-- Four GitHub issues and four linked personal branches were created from `main`:
-  - Bader, [#1](https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp/issues/1): `codex/bader-backend`.
-  - Mohammad, [#2](https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp/issues/2): `codex/mohammad-ml`.
-  - Hamza, [#3](https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp/issues/3): `codex/hamza-quest`.
-  - Mustafa, [#4](https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp/issues/4): `codex/mustafa-design`.
-- Issues contain ordered tasks, disjoint file ownership, handoffs and exact first-checkout commands. `AGENTS.md` records the same ownership boundaries. No scheduled checkpoints were added.
-- Bader and Mustafa are assignable collaborators. GitHub lists existing pending write invitations for `MohammadESteitieh` and `HamzaAlsarakbi`; their issues name the owners but cannot receive those assignees until acceptance. Recheck before assigning; do not duplicate the invitations.
-- Main protection now requires pull requests, applies to administrators, permits zero required approvals, and disallows force-pushes/deletion. No nonexistent status checks were required. Automatic deletion of merged branches was already disabled and remains disabled.
-- Only Bader's local checkout was switched. Other teammates must accept invitations where needed and run their issue's checkout commands; remote branch creation does not verify their local state.
-- The user reports that Quest hardware and GPU access are ready. Actual GPU model/runtime, body assets, headset camera build and model execution have not been verified in this checkout.
+Owners remain Bader/backend (#1), Mohammad/ML (#2), Hamza/Quest (#3), Mustafa/design (#4), as recorded in AGENTS.md. Hamza alone changes Unity files. No model adapter/output boundary has been invented on Mohammad's behalf.
 
-Verification commands executed successfully:
+## Priority 1: usable importer handoff
+
+Files: `processing/contracts.py`, `processing/schemas/`, `tests/contracts/`, root Python manifest/lockfile and targeted ignore rules. The fixture guide is `tests/contracts/fixtures/README.md`; SPEC section 8 records the executable contract.
+
+The authored fixture has four frames, four vertices, four triangles and three illustrative joints. It exercises asymmetric axes/winding, shared root motion, irregular original timestamps, repeated resampling references and invalid frame/joint masks. No participant media, body assets, weights or clinical findings are included.
+
+JSON metadata is capped at 16 MiB before parsing. Validation rejects duplicate keys, nonfinite/oversized numbers, invalid calibration/pose shapes, bad counts/indices/parents, incorrect hashes, unsafe binary filenames, missing observations inside declared gaps and decoded replay data over 256 MiB. Capture and replay gaps are closed intervals; their endpoints cannot contain valid observations. Binary files are streamed during validation.
+
+### Verified commands and outcomes
 
 ```sh
-gh api repos/B2707/HTH-3-sarakbi-asadi-steitieh-grp/collaborators --paginate
-gh api repos/B2707/HTH-3-sarakbi-asadi-steitieh-grp/invitations
-gh api repos/B2707/HTH-3-sarakbi-asadi-steitieh-grp/assignees --paginate
-gh issue create --repo B2707/HTH-3-sarakbi-asadi-steitieh-grp --title '<owner task>' --body-file '<reviewed task file>'
-gh issue develop 1 --repo B2707/HTH-3-sarakbi-asadi-steitieh-grp --base main --name codex/bader-backend
-gh issue develop 2 --repo B2707/HTH-3-sarakbi-asadi-steitieh-grp --base main --name codex/mohammad-ml
-gh issue develop 3 --repo B2707/HTH-3-sarakbi-asadi-steitieh-grp --base main --name codex/hamza-quest
-gh issue develop 4 --repo B2707/HTH-3-sarakbi-asadi-steitieh-grp --base main --name codex/mustafa-design
-git fetch origin
-git switch --track origin/codex/bader-backend
+uv sync --python /opt/homebrew/bin/python3.11
+.venv/bin/python -m pytest tests/contracts --cov=processing --cov-report=term-missing -q
+.venv/bin/python -m processing.contracts validate tests/contracts/fixtures
+.venv/bin/ruff check processing tests/contracts
+.venv/bin/pip-audit --progress-spinner off
+git diff --check
 ```
 
-The issue-create line abbreviates the four owner-specific title/body-file arguments; Bader and Mustafa were also assigned to their respective issues. Protection was configured through GitHub's branch-protection API and checked from its response. These are repository-setup checks, not application/device/model tests.
+- Tests: 50 passed; 95.22% branch-inclusive coverage. CLI entrypoint lines are included in the report and separately exercised by the command above.
+- TDD: tests first failed because the module did not exist. Review regressions reproduced integer-valued-float crashes, huge-number overflow and invalid gap observations before fixes.
+- Fixture validation, lint and whitespace checks passed. Dependency audit reported no known vulnerabilities.
+- Independent reviews found and resolved numeric exception handling, a quadratic gap scan and unbounded metadata reads. The broad fixture ignore exception was removed to keep credentials/media/weights ignored.
+- Installed and used: macOS arm64, Python 3.11.10, uv 0.11.21, jsonschema 4.26.0, pytest 9.1.1, pytest-cov 7.1.0 and Ruff 0.16.9. Exact dependency hashes/versions are in `uv.lock`.
+- Python service tooling is separate from the future CUDA/model environment. No GPU/headset/model execution was performed.
 
-Read `SPEC.md` for all accepted decisions and `openapi.yaml` for the proposed service contract. This handoff records actual progress, not intended architecture.
+## Next concrete task
 
-## What is complete
+Recheck `main`, then implement the existing four-route FastAPI service: authentication, bounded multipart/ZIP validation, private atomic persistence, idempotency, one worker, restart recovery and job-owned artifacts. Keep a synthetic successful worker in tests only. Actual processing must fail clearly until a real worker is available.
 
-- Product interview: three tests, guided capture, patient histories, blue 3D body/skeleton, replay controls, evidence-linked findings, foot assessment and microscope.
-- User accepted 1–2 minutes after final capture as the target for loaded results; not benchmarked.
-- User selected findings/explanation/evidence only; the physio decides corrective action.
-- Standard Meta UI and menu approach documented.
-- Requirements, data/replay formats, service contract, work sequence, failure cases and acceptance checks written.
+Current service dependencies installed for that next task: FastAPI 0.141.1, Starlette 1.7.0, python-multipart 0.0.32, Uvicorn 0.54.0, HTTPX 0.28.1, PyYAML 6.0.3. They are installed tooling, not evidence of a working service.
 
-## What is not implemented or verified
+## Required integrations still blocked/unverified
 
-- Unity project/APK, camera capture, headset rendering or UI.
-- Service, upload, persistence or job processing.
-- GVHMR running on our footage or export/import working on Quest.
-- KERAAL data access/preprocessing, trained exercise analysis or held-out evaluation.
-- Foot model/measurement and its validation.
-- Motion magnification on Quest footage.
-- Any target latency, memory, frame rate or clinical performance.
+- Mohammad: runnable inference on authorized NVIDIA compute, exact model/output revisions, coordinates, scale and source-time mapping; genuine ELK/RTK/foot outputs and evaluation.
+- Hamza: real Quest camera sidecar, Unity importer and on-device replay; patient histories and capture/upload/review flow.
+- Bader: actual model wrapper/export transform after the dependency lands; microscope from original footage with camera-shake checks; measured full-path latency.
+- No actual GPU, registered model assets, dataset access, real capture calibration, 72 Hz rendering, 250 ms seeking or 1–2 minute turnaround has been verified here.
 
-No actual participant recording, trained model, private credential or downloaded dataset is included.
-
-## Next task for a fresh session
-
-**Start M0/M1: prove one real recording can become an aligned blue-body/skeleton replay.**
-
-1. Inspect Git status and read all four project documents.
-2. Recheck the current time and available tools/device/GPU. Do not assume hardware is already connected.
-3. Confirm model/body-asset and KERAAL access. Prioritize the CUDA model compatibility proof and a minimal official Quest camera/UI sample.
-4. Build/test one source-time-preserving export and Unity import before expanding UI or model categories.
-5. Record actual commands, pinned versions, durations and failures here.
-
-Independent work can be split between camera/UI, reconstruction/export and replay/clock. Assign file ownership first. A desktop fixture verifies mechanics; a real clip and eventual Quest run are still required.
-
-### First inspection commands
-
-Run from the repository root:
-
-```sh
-git status --short --branch
-git log -5 --oneline
-cat AGENTS.md docs/HANDOFF.md
-cat docs/SPEC.md
-command -v python3 adb git gh
-```
-
-Then inspect Unity installations and any manifests that actually exist. There is no application install/build command yet. Do not invent `npm install`, a Unity version or a working Python environment.
-
-## Risks to address first
-
-1. The user reports Quest and GPU access ready; the concrete runtime, model assets and end-to-end compatibility are still unverified.
-2. GVHMR's inspected demo assumes 30 FPS and estimated intrinsics in relevant paths. Preserve source timing and verify camera calibration integration.
-3. KERAAL ELK/RTK are seated protocols. Use the actual annotation guide, not generic standing exercise heuristics.
-4. Dataset skeletons and Quest/model joints may differ. Establish a tested mapping or shared feature extraction.
-5. No suitable automated foot method has been established. Preserve this required workstream and report its state honestly.
-6. Head movement/noise may defeat useful motion magnification.
-
-## Verification record for this documentation revision
-
-Repository access and its empty state were checked before writing. This revision contains five documentation files; no application/dependency manifests exist yet.
-
-Verified checks:
-
-- `npm exec --yes --package=@redocly/cli@2.54.3 -- redocly lint docs/openapi.yaml --extends=minimal`: passed with zero warnings/errors.
-- YAML parsing and local OpenAPI references: passed.
-- Markdown relative links, balanced code fences and required sections: passed.
-- Independent scope/contract review: addressed the separate-take timing rule. Findings from another recording cannot seek/highlight the main replay.
-- Independent security review: no detected secrets, private local paths, participant data or restricted assets. No material design blocker found.
-
-These are document/contract checks only. No application tests, dataset evaluation or headset tests have run. The publishing session verifies the remote commit after pushing; a fresh session should use `git status` and `git log -1` to confirm its checkout.
-
-Implementation evidence: **none yet**. M0–M4 and A01–A20 in the specification remain unverified.
-
-## How to update this file
-
-Replace stale status with the current branch/commit, exact successful/failed commands, actual environment versions, completed acceptance checks and the next concrete action. Keep implementation facts separate from planned features. Do not preserve an obsolete success claim after a regression.
-
-Use `git log -1` for the exact latest documentation commit; this file does not embed its own commit hash.
+Fixture success establishes mechanics only. Keep all unfinished required features explicit. Never claim a synthetic replay or test worker completes an application/model/device milestone.

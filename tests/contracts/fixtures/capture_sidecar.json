@@ -1,0 +1,58 @@
+{
+  "schema_version": "1.0",
+  "take_id": "fdab6aec-0c9c-51f8-be68-299591a68a4d",
+  "adapter": {
+    "name": "synthetic_mechanics_fixture",
+    "version": "1.0"
+  },
+  "image": {
+    "width_px": 640,
+    "height_px": 480,
+    "rotation_degrees": 0,
+    "mirrored": false
+  },
+  "camera": {
+    "id": "synthetic_no_camera",
+    "calibration_status": "unavailable"
+  },
+  "clock": {
+    "id": "synthetic_pts",
+    "unit": "nanoseconds",
+    "origin_pts_ns": "1000000000"
+  },
+  "frames": [
+    {
+      "frame_id": 100,
+      "pts_ns": "1000000000",
+      "image_valid": true
+    },
+    {
+      "frame_id": 101,
+      "pts_ns": "1040000000",
+      "image_valid": true
+    },
+    {
+      "frame_id": 103,
+      "pts_ns": "1110000000",
+      "image_valid": false
+    },
+    {
+      "frame_id": 107,
+      "pts_ns": "1200000000",
+      "image_valid": true
+    }
+  ],
+  "capture": {
+    "view": "front",
+    "condition": "seated",
+    "side": "not_applicable",
+    "interrupted": false,
+    "gaps": [
+      {
+        "start_pts_ns": "1080000000",
+        "end_pts_ns": "1150000000",
+        "reason": "Synthetic invalid interval; do not interpolate"
+      }
+    ]
+  }
+}

@@ -1,0 +1,174 @@
+{
+  "schema_version": "1.0",
+  "result_id": "be97a3ef-48a8-5f72-b26f-6325e0a0742f",
+  "source_take_id": "fdab6aec-0c9c-51f8-be68-299591a68a4d",
+  "synthetic": true,
+  "model": {
+    "name": "synthetic_asymmetric_tetrahedron",
+    "revision": "1.0",
+    "topology_revision": "tetrahedron-4v-4t-v1"
+  },
+  "frame_count": 4,
+  "vertex_count": 4,
+  "triangle_count": 4,
+  "joint_count": 3,
+  "joint_names": [
+    "root",
+    "high_tip",
+    "right_tip"
+  ],
+  "joint_parents": [
+    -1,
+    0,
+    0
+  ],
+  "joint_regions": {
+    "synthetic_upper": [
+      "high_tip"
+    ],
+    "synthetic_right": [
+      "right_tip"
+    ]
+  },
+  "frame_times_s": [
+    0.0,
+    0.04,
+    0.11,
+    0.2
+  ],
+  "source_frame_ids": [
+    100,
+    101,
+    103,
+    107
+  ],
+  "source_pts_ns": [
+    "1000000000",
+    "1040000000",
+    "1110000000",
+    "1200000000"
+  ],
+  "source_clock": {
+    "id": "synthetic_pts",
+    "unit": "nanoseconds",
+    "origin_pts_ns": "1000000000"
+  },
+  "frame_valid": [
+    true,
+    true,
+    false,
+    true
+  ],
+  "joint_valid": [
+    [
+      true,
+      true,
+      true
+    ],
+    [
+      true,
+      true,
+      false
+    ],
+    [
+      false,
+      false,
+      false
+    ],
+    [
+      true,
+      true,
+      true
+    ]
+  ],
+  "gaps": [
+    {
+      "start_s": 0.08,
+      "end_s": 0.15,
+      "reason": "Synthetic invalid interval; do not interpolate"
+    }
+  ],
+  "coordinate_system": "unity_left_handed_y_up_z_forward",
+  "units": "metres",
+  "scale_status": "estimated",
+  "scale_provenance": "Authored synthetic units; no physical measurement or calibration",
+  "source_coordinate_system": "unity_left_handed_y_up_z_forward",
+  "source_to_replay": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+  ],
+  "resampling_map": [
+    {
+      "inference_frame_id": 0,
+      "source_frame_id": 100,
+      "source_pts_ns": "1000000000"
+    },
+    {
+      "inference_frame_id": 1,
+      "source_frame_id": 101,
+      "source_pts_ns": "1040000000"
+    },
+    {
+      "inference_frame_id": 2,
+      "source_frame_id": 101,
+      "source_pts_ns": "1040000000"
+    },
+    {
+      "inference_frame_id": 3,
+      "source_frame_id": 103,
+      "source_pts_ns": "1110000000"
+    },
+    {
+      "inference_frame_id": 4,
+      "source_frame_id": 103,
+      "source_pts_ns": "1110000000"
+    },
+    {
+      "inference_frame_id": 5,
+      "source_frame_id": 107,
+      "source_pts_ns": "1200000000"
+    },
+    {
+      "inference_frame_id": 6,
+      "source_frame_id": 107,
+      "source_pts_ns": "1200000000"
+    }
+  ],
+  "artifacts": {
+    "mesh_triangles": {
+      "artifact_id": "5a8c1ba1-d0d8-55c4-90cf-6c744574d4a3",
+      "filename": "mesh_triangles.u32",
+      "byte_size": 48,
+      "sha256": "359d914ecb10111c25ad12df262a801720beefbe8a54ee934560475abf9f4ace",
+      "encoding": "uint32_le"
+    },
+    "mesh_vertices": {
+      "artifact_id": "57a2eb62-6f26-59dc-906c-ba943e57f8c6",
+      "filename": "mesh_vertices.f32",
+      "byte_size": 192,
+      "sha256": "411bfbda8d90d397199f6ca6d4a60402a498a6db0992945e6cd0bbbc5b5c9073",
+      "encoding": "float32_le_frame_major_xyz"
+    },
+    "skeleton_joints": {
+      "artifact_id": "97f8a98b-2c70-53fa-851f-153b14a199be",
+      "filename": "skeleton_joints.f32",
+      "byte_size": 144,
+      "sha256": "ca79854ae523c5c6d9c04ac4aaebe2b4af9642c20d6a91d8da5bb786547f4d63",
+      "encoding": "float32_le_frame_major_xyz"
+    }
+  }
+}

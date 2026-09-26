@@ -1,0 +1,30 @@
+[project]
+name = "physio-motion-processing"
+version = "0.1.0"
+description = "Local processing service and capture/replay contracts for the Quest demo"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi",
+  "uvicorn",
+  "python-multipart",
+  "jsonschema",
+  "PyYAML",
+]
+
+[dependency-groups]
+dev = ["pytest", "pytest-cov", "httpx", "pip-audit", "ruff"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests/backend", "tests/contracts"]
+pythonpath = ["."]
+
+[tool.coverage.run]
+source = ["processing"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 80

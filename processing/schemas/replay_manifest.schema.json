@@ -1,0 +1,391 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "result_id",
+    "source_take_id",
+    "synthetic",
+    "model",
+    "frame_count",
+    "vertex_count",
+    "triangle_count",
+    "joint_count",
+    "joint_names",
+    "joint_parents",
+    "joint_regions",
+    "frame_times_s",
+    "source_frame_ids",
+    "source_pts_ns",
+    "source_clock",
+    "frame_valid",
+    "joint_valid",
+    "gaps",
+    "coordinate_system",
+    "units",
+    "scale_status",
+    "scale_provenance",
+    "source_coordinate_system",
+    "source_to_replay",
+    "resampling_map",
+    "artifacts"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "result_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "source_take_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "synthetic": {
+      "type": "boolean",
+      "description": "True only for synthetic mechanical fixtures, never participant-derived output."
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "revision",
+        "topology_revision"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "topology_revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      }
+    },
+    "frame_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "vertex_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "triangle_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "joint_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "joint_names": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 80
+      },
+      "minItems": 1
+    },
+    "joint_parents": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": -1
+      },
+      "minItems": 1
+    },
+    "joint_regions": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 80
+      },
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "minItems": 1
+      }
+    },
+    "frame_times_s": {
+      "type": "array",
+      "items": {
+        "type": "number",
+        "minimum": 0
+      },
+      "minItems": 1
+    },
+    "source_frame_ids": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "minItems": 1
+    },
+    "source_pts_ns": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(0|[1-9][0-9]*)$",
+        "maxLength": 30
+      },
+      "minItems": 1
+    },
+    "source_clock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "unit",
+        "origin_pts_ns"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "unit": {
+          "const": "nanoseconds"
+        },
+        "origin_pts_ns": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$",
+          "maxLength": 30
+        }
+      }
+    },
+    "frame_valid": {
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "minItems": 1
+    },
+    "joint_valid": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "boolean"
+        },
+        "minItems": 1
+      },
+      "minItems": 1
+    },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "start_s",
+          "end_s",
+          "reason"
+        ],
+        "properties": {
+          "start_s": {
+            "type": "number",
+            "minimum": 0
+          },
+          "end_s": {
+            "type": "number",
+            "minimum": 0
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        }
+      },
+      "minItems": 0
+    },
+    "coordinate_system": {
+      "const": "unity_left_handed_y_up_z_forward"
+    },
+    "units": {
+      "const": "metres"
+    },
+    "scale_status": {
+      "type": "string",
+      "enum": [
+        "calibrated",
+        "estimated"
+      ]
+    },
+    "scale_provenance": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "source_coordinate_system": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "source_to_replay": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 16,
+      "maxItems": 16,
+      "description": "Row-major affine 4x4 matrix: multiply a column vector [x,y,z,1]. Last row is [0,0,0,1]. Binaries are already converted into replay coordinates; never apply twice."
+    },
+    "resampling_map": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "inference_frame_id",
+          "source_frame_id",
+          "source_pts_ns"
+        ],
+        "properties": {
+          "inference_frame_id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "source_frame_id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "source_pts_ns": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "maxLength": 30
+          }
+        }
+      },
+      "minItems": 0,
+      "description": "One record per inference sample, ordered by inference_frame_id; nearest-source mapping allows repeated source IDs and preserves original PTS. Empty if no resampling."
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mesh_triangles",
+        "mesh_vertices",
+        "skeleton_joints"
+      ],
+      "properties": {
+        "mesh_triangles": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "artifact_id",
+            "filename",
+            "byte_size",
+            "sha256",
+            "encoding"
+          ],
+          "properties": {
+            "artifact_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "filename": {
+              "const": "mesh_triangles.u32"
+            },
+            "byte_size": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "encoding": {
+              "const": "uint32_le"
+            }
+          }
+        },
+        "mesh_vertices": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "artifact_id",
+            "filename",
+            "byte_size",
+            "sha256",
+            "encoding"
+          ],
+          "properties": {
+            "artifact_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "filename": {
+              "const": "mesh_vertices.f32"
+            },
+            "byte_size": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "encoding": {
+              "const": "float32_le_frame_major_xyz"
+            }
+          }
+        },
+        "skeleton_joints": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "artifact_id",
+            "filename",
+            "byte_size",
+            "sha256",
+            "encoding"
+          ],
+          "properties": {
+            "artifact_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "filename": {
+              "const": "skeleton_joints.f32"
+            },
+            "byte_size": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "encoding": {
+              "const": "float32_le_frame_major_xyz"
+            }
+          }
+        }
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:physio-motion-replay:replay-manifest:1.0",
+  "title": "Replay manifest v1.0",
+  "description": "One source take, fixed topology, boolean validity masks. Run validate_replay for lengths, timing, topology, finite binaries, checksums and decoded budget."
+}
