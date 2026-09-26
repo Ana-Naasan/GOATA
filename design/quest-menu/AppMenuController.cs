@@ -9,9 +9,27 @@ namespace FootAssessment.Quest
         Home,
         Patients,
         History,
+        TestSelection,
         Capture,
+        Processing,
         Review,
+        FindingDetail,
+        FootReview,
+        Microscope,
         Options
+    }
+
+    /// <summary>
+    /// Implement this in the existing session controller. A transition may be
+    /// approved only after capture interruption/retake and unsaved-state guards
+    /// have completed. Back must resolve from the active patient and saved test,
+    /// never from a fixed page sequence.
+    /// </summary>
+    public interface IAppNavigationCoordinator
+    {
+        bool TryPrepareNavigation(AppScreen from, AppScreen to);
+        bool TryGetBackDestination(AppScreen from, out AppScreen destination);
+        void OnAppFocusChanged(bool hasInputFocus);
     }
 
     [Serializable]
@@ -36,14 +54,20 @@ namespace FootAssessment.Quest
         [SerializeField] private GameObject menuRoot;
         [SerializeField] private ScreenBinding[] screens = new ScreenBinding[0];
         [SerializeField] private AppScreen initialScreen = AppScreen.Home;
+        [SerializeField] private MonoBehaviour navigationCoordinatorBehaviour;
 
+        private IAppNavigationCoordinator coordinator;
         private bool ready;
+        private bool hasOpenedScreen;
         private bool menuOpen;
+        private bool applicationFocused = true;
+        private bool applicationPaused;
+        private bool hasInputFocus = true;
         private AppScreen currentScreen;
-        private AppScreen returnFromOptions = AppScreen.Home;
 
         public AppScreen CurrentScreen => currentScreen;
         public bool IsMenuOpen => menuOpen;
+        public bool HasInputFocus => hasInputFocus;
 
         public event Action<AppScreen> ScreenChanged;
         public event Action<bool> MenuVisibilityChanged;
@@ -56,6 +80,7 @@ namespace FootAssessment.Quest
                 return;
             }
 
+            coordinator = (IAppNavigationCoordinator)navigationCoordinatorBehaviour;
             foreach (ScreenBinding binding in screens)
             {
                 binding.Root.SetActive(false);
@@ -68,6 +93,8 @@ namespace FootAssessment.Quest
 
             if (!TryOpen(initialScreen))
                 enabled = false;
+            else
+                coordinator.OnAppFocusChanged(hasInputFocus);
         }
 
         public bool TryOpen(AppScreen destination)
@@ -78,6 +105,12 @@ namespace FootAssessment.Quest
                 return false;
             }
 
+            if (hasOpenedScreen && !hasInputFocus)
+            {
+                Debug.LogWarning("Ignoring app navigation while input focus is lost.", this);
+                return false;
+            }
+
             ScreenBinding selected = Find(destination);
             if (selected == null)
             {
@@ -85,8 +118,9 @@ namespace FootAssessment.Quest
                 return false;
             }
 
-            if (destination == AppScreen.Options && currentScreen != AppScreen.Options)
-                returnFromOptions = currentScreen;
+            if (hasOpenedScreen && destination != currentScreen &&
+                !coordinator.TryPrepareNavigation(currentScreen, destination))
+                return false;
 
             foreach (ScreenBinding binding in screens)
             {
@@ -97,6 +131,7 @@ namespace FootAssessment.Quest
             }
 
             currentScreen = destination;
+            hasOpenedScreen = true;
             SetMenuOpen(false);
             ScreenChanged?.Invoke(destination);
             return true;
@@ -106,8 +141,13 @@ namespace FootAssessment.Quest
         public void OpenHome() => TryOpen(AppScreen.Home);
         public void OpenPatients() => TryOpen(AppScreen.Patients);
         public void OpenHistory() => TryOpen(AppScreen.History);
+        public void OpenTestSelection() => TryOpen(AppScreen.TestSelection);
         public void OpenCapture() => TryOpen(AppScreen.Capture);
+        public void OpenProcessing() => TryOpen(AppScreen.Processing);
         public void OpenReview() => TryOpen(AppScreen.Review);
+        public void OpenFindingDetail() => TryOpen(AppScreen.FindingDetail);
+        public void OpenFootReview() => TryOpen(AppScreen.FootReview);
+        public void OpenMicroscope() => TryOpen(AppScreen.Microscope);
         public void OpenOptions() => TryOpen(AppScreen.Options);
 
         public void ToggleMenu() => SetMenuOpen(!menuOpen);
@@ -115,33 +155,45 @@ namespace FootAssessment.Quest
 
         public void Back()
         {
+            if (!ready || !hasInputFocus)
+                return;
+
             if (menuOpen)
             {
                 CloseMenu();
                 return;
             }
 
-            switch (currentScreen)
-            {
-                case AppScreen.Review:
-                    OpenCapture();
-                    break;
-                case AppScreen.Capture:
-                    OpenHistory();
-                    break;
-                case AppScreen.History:
-                    OpenPatients();
-                    break;
-                case AppScreen.Patients:
-                    OpenHome();
-                    break;
-                case AppScreen.Options:
-                    TryOpen(returnFromOptions);
-                    break;
-                default:
-                    CloseMenu();
-                    break;
-            }
+            if (coordinator.TryGetBackDestination(currentScreen, out AppScreen destination))
+                TryOpen(destination);
+        }
+
+        private void OnApplicationFocus(bool focused)
+        {
+            applicationFocused = focused;
+            UpdateInputFocus();
+        }
+
+        private void OnApplicationPause(bool paused)
+        {
+            applicationPaused = paused;
+            UpdateInputFocus();
+        }
+
+        private void UpdateInputFocus()
+        {
+            bool next = applicationFocused && !applicationPaused;
+            if (hasInputFocus == next)
+                return;
+
+            hasInputFocus = next;
+            if (!ready)
+                return;
+
+            if (!next)
+                SetMenuOpen(false);
+
+            coordinator.OnAppFocusChanged(next);
         }
 
         private void SetMenuOpen(bool visible)
@@ -151,6 +203,9 @@ namespace FootAssessment.Quest
                 Debug.LogError("Foot Assessment menu has not been initialized.", this);
                 return;
             }
+
+            if (visible && !hasInputFocus)
+                return;
 
             if (menuOpen == visible)
                 return;
@@ -173,6 +228,12 @@ namespace FootAssessment.Quest
 
         private bool ValidateBindings()
         {
+            if (!(navigationCoordinatorBehaviour is IAppNavigationCoordinator))
+            {
+                Debug.LogError("Assign a session coordinator implementing IAppNavigationCoordinator.", this);
+                return false;
+            }
+
             if (menuRoot == null || screens == null || screens.Length == 0)
             {
                 Debug.LogError("Assign a menu root and at least one screen binding.", this);
