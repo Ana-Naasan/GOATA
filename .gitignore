@@ -8,6 +8,7 @@ htmlcov/
 .ruff_cache/
 .env
 .env.*
+.envrc
 !.env.example
 /var/
 /recordings/
@@ -22,6 +23,10 @@ htmlcov/
 *.onnx
 *.pem
 *.key
+*.keystore
+*.jks
+*.p12
+*.pfx
 *.mp4
 *.mov
 *.zip
