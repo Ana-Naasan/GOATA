@@ -2,8 +2,11 @@
 
 ## Current state — September 26, 2026
 
-- Branch: `codex/bader-backend`. Ownership documentation landed through PR #5 at `0331367`; fixture implementation `3fe90e6` landed through PR #6 at `0b326c9`. Use `git log -1` for the latest service/handoff commit.
+- Branch: `codex/bader-backend`. Ownership documentation landed through PR #5 at `0331367`; fixture implementation `3fe90e6` landed through PR #6 at `0b326c9`; the local service landed through PR #7 at `4c94f10`. Use `git log -1` for the latest service/handoff commit.
 - Completed: Priority 1 capture/replay contract handoff and Priority 2 local upload/job/result/artifact mechanics. Both have tests and independent review.
+- Follow-up: targeted ignore rules cover local environment files (including `.envrc`), recordings, data, weights, service/TLS material and Android signing credentials (`.keystore`, `.jks`, `.p12`, `.pfx`) before those assets are introduced. No ignored asset was added to Git.
+- Earlier backend-only verification, recorded in `93fcd77`: macOS 27.0 arm64, Python 3.11.1 and uv 0.12.19; that verification environment had no Unity, Android/ADB, connected Quest or NVIDIA compute. This historical snapshot does not describe the current Quest setup.
+- Current merge verification uses Bader's Mac: macOS 26.6.2 arm64, Python 3.11.10 and uv 0.11.21. Separately, the Hamza chat installed Unity 6000.0.66f2 and Android tools, built and installed the official camera sample, and received user confirmation of a live moving image on Quest 3 at 16:16 EDT. Recording with metadata, the Unity importer and application replay remain incomplete; the local Quest work is not on `main` yet.
 - Real reconstruction, Quest import/capture, automated ELK/RTK/foot assessment and microscope remain unfinished. M1 is not complete. Normal service processing explicitly fails until real inference is integrated.
 - Deadline: September 27, 2026, 10:00 a.m. EDT.
 - Repository: https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp
@@ -70,9 +73,28 @@ git diff --check
 - Independent code, Python and static security reviews completed. Regressions were reproduced before fixing post-rename fsync/idempotency failure, accepted-evidence aliasing, metadata publication limits, uppercase artifact IDs, interrupted-take assessment, and valid DEFLATE buffering at the chunk boundary.
 - Installed/used service versions: FastAPI 0.141.1, Starlette 1.7.0, python-multipart 0.0.32, Uvicorn 0.54.0, HTTPX 0.28.1 and PyYAML 6.0.3. Python and all exact dependency hashes remain recorded above/in `uv.lock`.
 
+### Merge verification — September 26, 2026
+
+Rerun in an isolated checkout combining Bader's follow-up `93fcd77` with
+`main` at `1f0bcef`; no processing source or API contract changed.
+
+```sh
+uv sync --locked --python /opt/homebrew/bin/python3.11
+uv run --locked pytest --cov=processing --cov-report=term-missing -q
+uv run --locked ruff check processing tests
+uv run --locked pip-audit --progress-spinner off
+uv run --locked python -m processing.contracts validate tests/contracts/fixtures
+npm exec --yes --package=@redocly/cli@2.54.3 -- redocly lint docs/openapi.yaml --extends=minimal
+git diff --check
+```
+
+- All commands passed: 189 tests passed at 94.30% branch-inclusive coverage; Ruff and whitespace checks passed; pip-audit reported no known vulnerabilities; the synthetic fixture's mechanical contract and the OpenAPI document validated.
+- The suite retains the known upstream Starlette `httpx` TestClient deprecation warning. It does not affect the locked test result.
+- This verifies Bader's completed work against SPEC sections 8–9 and the API contract: bounded/validated capture and replay contracts, authenticated persisted/idempotent job mechanics and truthful unavailable processing. It does not verify the model-, footage- or Quest-dependent requirements below.
+
 ## Next concrete task and dependency gate
 
-The last inspected `main` was `0b326c9`, containing the fixture handoff but no `processing/reconstruction`, `processing/analysis` or `quest` implementation. Recheck main after this service PR lands. Integrate Mohammad's verified command/output only when it is on main, then export real geometry using the proven source coordinate/time mapping. Integrate Hamza's real capture/importer only when that dependency is on main.
+The pre-merge inspection of `main` at `1f0bcef` includes the fixture/service PRs #6 and #7 plus Mustafa's design/menu handoff in PR #9. It still has no `processing/reconstruction`, `processing/analysis` or `quest` implementation. Mohammad is continuing work on his branch; no model handoff is on `main` yet. Hamza's local camera proof and tested replay clock can support continued Quest work, while his recorder/importer remain incomplete. Integrate Mohammad's verified command/output only when it is on main, then export real geometry using the proven source coordinate/time mapping. Integrate Hamza's real capture/importer only when that dependency is on main.
 
 Until then, the independent deliverables in this plan are complete. Do not invent an inference adapter, model topology, exercise label set, camera calibration or microscope algorithm to bypass a missing dependency.
 
