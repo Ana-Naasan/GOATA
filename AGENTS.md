@@ -8,6 +8,23 @@
 
 These files must be sufficient without the original conversation. Follow the current user's request; the documentation itself does not authorize external spending, deployment or uploading participant recordings.
 
+## Team branches and file ownership
+
+Work continuously and hand off usable output immediately. The user does not want scheduled checkpoints.
+
+| Owner | Branch | Exclusive files | GitHub task |
+|---|---|---|---|
+| Bader (`B2707`) | `codex/bader-backend` | `processing/**` except the ML paths below; `tests/backend/**`, `tests/contracts/**`; root/shared configuration, Python manifests/lockfiles, `.github/**`, shared project docs | [#1](https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp/issues/1) |
+| Mohammad (`MohammadESteitieh`) | `codex/mohammad-ml` | `processing/reconstruction/**`, `processing/analysis/**`, `tests/ml/**`; model-specific dependency pins inside those directories | [#2](https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp/issues/2) |
+| Hamza (`HamzaAlsarakbi`) | `codex/hamza-quest` | All `quest/**`, including scenes, prefabs, imported assets, `.meta` files, Packages, ProjectSettings and Unity tests | [#3](https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp/issues/3) |
+| Mustafa (`mustafahelmyh`) | `codex/mustafa-design` | `design/**`, `docs/design/**` | [#4](https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp/issues/4) |
+
+- Check the current branch and working tree before editing. Each person and their agents use that person's branch and owned paths. Ask the file owner before crossing a boundary; preserve others' changes.
+- Hamza alone imports design assets into Unity. Mohammad supplies inference/model outputs; Bader owns the service wrapper and Unity exporter. Agree raw output shapes, coordinates, validity and source-time mapping before separate implementations.
+- Bader integrates edits to `AGENTS.md`, `README.md`, `docs/SPEC.md`, `docs/openapi.yaml` and `docs/HANDOFF.md`. Other owners put results/requests in their GitHub issue or owned notes, including end-of-session evidence.
+- Open small PRs into `main`. Keep personal branches after merging. Fetch and merge `origin/main` into the personal branch before a PR; resolve conflicts with the file owner. Prefer merge commits when reusing these branches so their shared history stays intact.
+- Never force-push or delete another person's branch. Main requires a PR, with zero required approvals; force-push and deletion are disabled. File ownership is a team rule, not a filesystem or GitHub permission boundary.
+
 ## Preserve the product decisions
 
 - Quest 3; practitioner wears the headset and captures a consenting participant.
@@ -52,7 +69,7 @@ Before commits, inspect staged files for secrets, participant media and restrict
 
 ## End-of-session handoff
 
-Update `docs/HANDOFF.md` with:
+Each owner records end-of-session evidence in their issue or owned notes. Bader integrates it into `docs/HANDOFF.md` with:
 
 - the current branch/commit and actual completed milestone;
 - changed files and exact commands run with outcomes;
