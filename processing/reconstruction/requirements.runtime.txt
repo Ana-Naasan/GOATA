@@ -1,0 +1,5 @@
+# Upstream requirements.txt supplies the CUDA/model stack at the pinned revision.
+# yacs is imported by HMR2 configs but absent from upstream requirements.
+yacs==0.1.8
+# Newer OpenCV releases require NumPy 2, incompatible with upstream NumPy 1.23.5.
+opencv-python==4.10.0.84

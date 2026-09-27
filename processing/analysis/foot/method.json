@@ -1,0 +1,144 @@
+{
+  "schema_version": "0.1.0",
+  "method_id": "manual_standing_dorsal_height",
+  "version": "0.1.0",
+  "name": "Manual standing dorsal height at half projected foot length",
+  "automated_feature": {
+    "name": "foot",
+    "status": "unavailable",
+    "detail": "Automated foot assessment incomplete. Only geometry from manually supplied anatomical points is implemented; Quest capture and reference validation remain unverified."
+  },
+  "quest_validation": "not_performed",
+  "reference_validation": "not_performed_for_this_implementation",
+  "supported_output": "One standing dorsal-surface height in millimetres from manual image annotations and an explicitly measured same-plane scale. This is not plantar arch clearance or navicular height.",
+  "unsupported_outputs": [
+    "Automatic anatomical landmark extraction",
+    "Flat-foot or other diagnostic classification",
+    "Gait or dynamic arch behaviour",
+    "Sit-to-stand difference and mobility classification",
+    "Clinical confidence, accuracy estimate or treatment advice",
+    "Full-body pose or reconstruction from close-ups"
+  ],
+  "implementation_assets": {
+    "code": "measurement.py, original standard-library geometry implementation",
+    "weights": "not_applicable",
+    "training_data": "not_applicable",
+    "upstream_code_copied": false,
+    "dataset_or_weights_downloaded": false
+  },
+  "capture_requirements": [
+    "Identify the patient, session, take, original frame ID and nanosecond PTS. Preserve the source image hash and the full annotation record. Verify all references against the owning capture before use.",
+    "One barefoot left or right foot, medial view, standing. Include posterior heel, hallux tip, dorsal surface at half projected heel-to-hallux length, and supporting surface without occlusion.",
+    "Verify 50 percent body-weight loading with an appropriate measurement record; do not infer loading from appearance or a standing label. The study used a calibrated weight scale, relaxed foot posture, perpendicular lower leg and palpation of anterior tendons.",
+    "Use an unamplified image with known geometric correction to a medial measurement plane and a horizontal support line. Record the correction and camera geometry. This module does not perform rectification or verify camera alignment.",
+    "Provide measured same-plane calibration endpoints and their physical separation. Record calibration provenance. Intrinsics alone, model scale and headset distance do not supply this measurement.",
+    "A qualified annotator must identify the anatomical points on the original evidence and record their identity. The module only checks numeric geometry; it cannot verify anatomy, loading, camera pose or same-plane placement.",
+    "Return unavailable for raw oblique, distorted, occluded, invalid, interrupted or uncalibrated evidence. Do not run a full-body tracker to fill missing foot landmarks.",
+    "Retain an explicit reference-comparison status. A provided independent reference must identify its method, value in millimetres and record. A signed difference is descriptive only; there is no pass threshold."
+  ],
+  "geometry_contract": {
+    "coordinates": "Rectified image pixels, x right, y down. Heel and hallux may face either horizontal direction.",
+    "posterior_heel": "Most posterior visible aspect of heel, not a body-model heel joint.",
+    "hallux_tip": "Tip of hallux, not the longest other toe or the centre of a toe keypoint.",
+    "dorsum_at_half_length": "Explicitly annotated dorsal-surface point at the horizontal midpoint of posterior heel and hallux tip.",
+    "height": "Vertical distance from the supporting surface to that dorsal point, converted using the measured same-plane reference.",
+    "numeric_midpoint_tolerance_px": 1e-9,
+    "tolerance_meaning": "Floating-point consistency only; not anatomical accuracy or an acceptance threshold.",
+    "dimension_limit_px": 32768,
+    "dimension_limit_meaning": "Software input bound, not a tested camera capability."
+  },
+  "study_to_quest_gaps": [
+    "The study fixed a digital camera to a bar 61 cm from a positioning line. A moving head-worn camera is not that setup. No Quest alignment, distortion, focus or reproducibility proof has been performed.",
+    "The study included two known-distance objects in every image and averaged three manual measurements. This implementation consumes one annotation and one asserted same-plane reference; it does not reproduce the full study protocol.",
+    "The study examined 275 asymptomatic participants and assessed radiographic validity on the right feet of 12 participants. It did not validate automatic extraction or a Quest classifier.",
+    "The study reported systematic differences between photographic soft-tissue and radiographic measurements. These methods are not interchangeable.",
+    "The paper's seated non-weight-bearing geometry uses an inferior heel-pad to first-metatarsal-head baseline, not the standing support line. Seated images are intentionally rejected here.",
+    "The procedure text and positive reported sit-to-stand reductions need sign reconciliation before implementing a paired difference. This implementation makes no paired-difference claim.",
+    "No physical reference comparison, clinical evaluation, device test, latency benchmark, integration or A12 completion is claimed."
+  ],
+  "sources": [
+    {
+      "id": "mcpoil_2008",
+      "url": "https://link.springer.com/article/10.1186/1757-1146-1-3",
+      "revision": "Published 2008-07-28, Journal of Foot and Ankle Research 1, article 3, DOI 10.1186/1757-1146-1-3",
+      "authors": "Thomas G McPoil, Mark W Cornwall, Lynn Medoff, Bill Vicenzino, Kelly Forsberg, Dana Hilz",
+      "title": "Arch height change during sit-to-stand: an alternative for the navicular drop test",
+      "license": "Article CC BY 2.0, as stated in Rights and permissions; not a blanket license for third-party software or participant data.",
+      "license_url": "http://creativecommons.org/licenses/by/2.0",
+      "availability": "Full article accessible. No measurement source code, learned weights or participant-level reusable dataset release identified on the inspected article page. Supplementary links are original figure images, not an annotated training set. No participant data downloaded.",
+      "passages": [
+        {
+          "section": "Methods / Procedures",
+          "quote": "The dorsal arch height in weight bearing (ArchHtWB) was determined by measuring the vertical height from the supporting surface to the dorsum of the foot at 50% of the total foot length."
+        },
+        {
+          "section": "Methods / Procedures",
+          "quote": "Two objects of known distance were always included in the field of view of the digital camera to permit calibration of all measurements"
+        },
+        {
+          "section": "Methods / Procedures",
+          "quote": "Each measurement was manually performed three times and the average was recorded."
+        },
+        {
+          "section": "Methods / Determination of Reliability and Validity",
+          "quote": "To establish validity, lateral radiographs were taken of the right foot of the same 12 participants used for the reliability assessment."
+        },
+        {
+          "section": "Discussion",
+          "quote": "Although the measurements from the digital image and the radiograph are considered to be reliable, they are not identical as shown by the bias between the two measurements."
+        },
+        {
+          "section": "Discussion",
+          "quote": "Another limitation of this study is that it was conducted entirely on asymptomatic individuals."
+        }
+      ],
+      "reference_findings": {
+        "standing_50_percent_height_correlation_with_radiograph": 0.93,
+        "paired_difference_correlation_with_radiograph": 0.12,
+        "interpretation": "Published correlations under the study protocol, not accuracy of this implementation. The low paired-difference correlation and systematic bias prevent claiming equivalence to radiographs."
+      }
+    },
+    {
+      "id": "openpose_body25",
+      "url": "https://raw.githubusercontent.com/CMU-Perceptual-Computing-Lab/openpose/master/doc/02_output.md",
+      "revision": "master inspected; GitHub commits/master reported 5c5d96523ef917bd30301245fdc8343937cae48d, committed 2024-08-03",
+      "revision_url": "https://api.github.com/repos/CMU-Perceptual-Computing-Lab/openpose/commits/master",
+      "license_url": "https://raw.githubusercontent.com/CMU-Perceptual-Computing-Lab/openpose/5c5d96523ef917bd30301245fdc8343937cae48d/LICENSE",
+      "license_passage": "ACADEMIC OR NON-PROFIT ORGANIZATION NONCOMMERCIAL RESEARCH USE ONLY",
+      "license_detail": "The repository license also restricts redistribution and third-party access. The annotation-page CC BY license is not assumed to override this repository license. Check model-specific rights before any use; no weights were fetched.",
+      "output_passage": "BODY_25 lists LBigToe, LSmallToe, LHeel, RBigToe, RSmallToe and RHeel at indices 19 through 24. It has no dorsal midpoint or navicular point.",
+      "weight_identifier": "pose/body_25/pose_iter_584000.caffemodel",
+      "weight_url": "http://vcl.snu.ac.kr/OpenPose/models/pose/body_25/pose_iter_584000.caffemodel",
+      "weight_evidence": "The inspected 5c5d965 commit patches doc/installation/1_prerequisites.md to advertise this exact URL. Payload availability and checksum were not tested; no HEAD or download performed.",
+      "decision": "Rejected for arch measurement. Missing anatomy and no identified validation for medial barefoot close-up arch assessment. This is not a claim that no other automated method exists."
+    },
+    {
+      "id": "cmu_foot_annotations",
+      "url": "https://cmu-perceptual-computing-lab.github.io/foot_keypoint_dataset/",
+      "revision": "Public project page inspected; annotation identifiers train2017_foot_v1 and val2017_foot_v1; page has no release commit displayed.",
+      "license": "Foot Keypoint Annotations CC BY 4.0 according to page License section. COCO images are separate assets; their individual rights were not inspected or cleared.",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/legalcode",
+      "train_url": "http://posefs1.perception.cs.cmu.edu/OpenPose/datasets/foot/person_keypoints_train2017_foot_v1.zip",
+      "validation_url": "http://posefs1.perception.cs.cmu.edu/OpenPose/datasets/foot/person_keypoints_val2017_foot_v1.zip",
+      "availability": "Public download links advertised; archives were not requested or downloaded. No claim of payload reachability or dataset contents beyond the publisher's description.",
+      "passages": [
+        "A total of 6 foot keypoints are labeled.",
+        "For instance, for the exact toe positions, we label the area between the connection of the nail and skin, and also take depth into consideration by labeling the center of the toe rather than the surface.",
+        "Trained foot detector models and testing code released in OpenPose"
+      ],
+      "reference_measurement": "Crowd-annotated COCO foot keypoints, not measured arch height or clinical flat-foot labels. Page describes 14K training and 545 validation annotations in its quoted description; download heading rounds to approximately 13.5K and 0.5K.",
+      "decision": "Not a training or validation source for the required dorsal-surface measurement. Toe centres and body-pose heel points cannot substitute for the study's anatomical surface extrema."
+    }
+  ],
+  "integration_contract": {
+    "output_kind": "Local manual-measurement record, not an automatic Finding or complete ResultManifest.",
+    "feature_status": "Keep automated foot Feature unavailable even when a manual measurement exists.",
+    "caller_responsibilities": [
+      "Verify patient/session/take ownership, source frame and PTS against the original sidecar and hash the actual source image.",
+      "Retain source-to-rectified image mapping and the geometry/calibration records; this module does not create them.",
+      "Keep separate-take evidence separate from body replay. Never seek or highlight another take's timeline.",
+      "Save immutable result versions and associate them with the original patient, not the currently selected patient.",
+      "Implement capture and annotation UI separately; no UI or service integration is included here."
+    ]
+  }
+}

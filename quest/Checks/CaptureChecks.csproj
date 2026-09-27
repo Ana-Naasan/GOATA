@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems><TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <CachedNewtonsoft Include="../Library/PackageCache/com.unity.nuget.newtonsoft-json@*/Runtime/Newtonsoft.Json.dll" />
+    <Reference Include="Newtonsoft.Json"><HintPath>@(CachedNewtonsoft)</HintPath></Reference>
+    <Compile Include="CaptureChecks.cs" />
+    <Compile Include="../Assets/Physio/Capture/CaptureBundle.cs" />
+  </ItemGroup>
+</Project>

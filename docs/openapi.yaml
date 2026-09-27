@@ -285,6 +285,9 @@ components:
         The JSON sidecar preserves original frame IDs/PTS, image dimensions,
         intrinsics, available camera poses/tracking validity and adapter version.
         Never substitute decode frame number for original capture timing.
+        Optional sidecar.media records an explicit indexed_presentation_time_us
+        array binding verified mux timestamps to the preserved original frames.
+        The decoder verifies every timestamp before accepting that mapping.
 
         For elk/rtk require a replay_take_id referencing a full_body take in this
         manifest. For barefoot require at least one foot_closeup; optional replay

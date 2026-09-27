@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><Nullable>enable</Nullable><EnableDefaultCompileItems>false</EnableDefaultCompileItems><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup>
+  <ItemGroup><Compile Include="WorkflowChecks.cs" /><ProjectReference Include="Workflow/Physio.Workflow.csproj" /></ItemGroup>
+  <ItemGroup><CachedNewtonsoft Include="../Library/PackageCache/com.unity.nuget.newtonsoft-json@*/Runtime/Newtonsoft.Json.dll" /><CachedNewtonsoft Condition="'@(CachedNewtonsoft)' == ''" Include="$(HOME)/Library/Caches/HTH/Unity-PassthroughCameraApiSamples/Library/PackageCache/com.unity.nuget.newtonsoft-json@*/Runtime/Newtonsoft.Json.dll" /></ItemGroup>
+  <PropertyGroup><NewtonsoftJsonPath Condition="'$(NewtonsoftJsonPath)' == ''">@(CachedNewtonsoft)</NewtonsoftJsonPath></PropertyGroup>
+  <ItemGroup><Reference Include="Newtonsoft.Json"><HintPath>$(NewtonsoftJsonPath)</HintPath></Reference></ItemGroup>
+<ItemGroup><None Include="../../tests/contracts/fixtures/*" Link="fixtures/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" /></ItemGroup></Project>

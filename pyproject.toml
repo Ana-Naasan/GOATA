@@ -11,6 +11,9 @@ dependencies = [
   "PyYAML",
 ]
 
+[project.optional-dependencies]
+microscope = ["numpy>=1.26,<3", "opencv-python-headless>=4.10,<5", "av>=13,<17"]
+
 [dependency-groups]
 dev = ["pytest", "pytest-cov", "httpx", "pip-audit", "ruff"]
 
@@ -18,7 +21,7 @@ dev = ["pytest", "pytest-cov", "httpx", "pip-audit", "ruff"]
 package = false
 
 [tool.pytest.ini_options]
-testpaths = ["tests/backend", "tests/contracts"]
+testpaths = ["tests/backend", "tests/contracts", "tests/ml"]
 pythonpath = ["."]
 
 [tool.coverage.run]

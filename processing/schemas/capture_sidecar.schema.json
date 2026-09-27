@@ -12,6 +12,20 @@
     "capture"
   ],
   "properties": {
+    "media": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["binding", "presentation_time_us"],
+      "description": "One actual mux presentation timestamp per source frame, verified by the capture adapter against encoder output. Original camera PTS remain unchanged. Decoders must compare every timestamp before using this index mapping.",
+      "properties": {
+        "binding": {"const": "indexed_presentation_time_us"},
+        "presentation_time_us": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$", "maxLength": 30}
+        }
+      }
+    },
     "schema_version": {
       "const": "1.0"
     },

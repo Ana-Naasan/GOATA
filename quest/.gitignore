@@ -1,0 +1,7 @@
+**/bin/
+**/obj/
+Checks/coverage/
+# Upstream camera-sample detection weights are not part of the fixture viewer.
+*.sentis
+*.sentis.meta
+*.onnx.meta

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="ReplayChecks.cs" />
+    <Compile Include="../Assets/Physio/Viewer/HandMenuPressEdge.cs" />
+    <ProjectReference Include="Replay/Physio.Replay.csproj" />
+    <None Include="../../tests/contracts/fixtures/replay_manifest.json" Link="replay_manifest.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

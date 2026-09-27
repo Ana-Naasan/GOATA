@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "upstream": {
+    "repository": "https://github.com/nguyensmai/KeraalDataset",
+    "revision": "8e111d5c3e95d4776d74832a897228137f409d94",
+    "sources": {
+      "label_definitions": "annotate_videos/LabellisationDesVideos_fr.pdf#page=2",
+      "annotation_semantics": "annotate_videos/LabellisationDesVideos_fr.pdf#page=1",
+      "schema": "annotate_videos/keraalSpec.xml",
+      "template_defaults": "annotate_videos/createAnvil.py",
+      "file_format": "doc/readme_files_format.txt",
+      "groups": "doc/readme_folders_content.txt",
+      "pose_extractor": "get_skeletons_from_videos/get_blazepose_skeleton.py",
+      "software_license": "LICENSE"
+    },
+    "software_license": "BSD-2-Clause",
+    "dataset": {
+      "source": "https://keraal.enstb.org/KeraalDataset.html",
+      "source_version": "unversioned",
+      "previous_inspection_date": "2026-09-26",
+      "stated_license": "CC-BY-NC-SA",
+      "license_version": null,
+      "release_terms_verified": false,
+      "intended_use_compatibility": "unverified",
+      "archive_availability": "untested",
+      "authorized_local_data": "unavailable",
+      "access_state": "blocked_pending_authorization_and_release_terms",
+      "authentication_barrier_observed": false
+    }
+  },
+  "annotation": {
+    "vocabulary_source": "keraal.py:SCHEMA",
+    "definition_language": "English translation of upstream French guide",
+    "global_error": "worst_error_over_sequence",
+    "temporal_error": "explicit_start_end_only",
+    "training_review": "explicit_human_reviewer_required_template_Correct_is_not_review",
+    "unknown_extensions": "reject",
+    "groups": {"1A": "annotated", "2A": "annotated", "1B": "unlabelled", "2B": "unlabelled", "3": "simulated_errors_recording_labels"},
+    "group_names_are_partitions": false
+  },
+  "exercises": {
+    "elk": {
+      "protocol": "seated flank stretch",
+      "labels": {
+        "Error1": "Non-raised arm is not placed along the body",
+        "Error2": "Participant does not lean sideways to stretch the flank",
+        "Error3": "Participant lifts buttocks from chair and leans too far"
+      }
+    },
+    "rtk": {
+      "protocol": "seated torso rotation",
+      "labels": {
+        "Error1": "One or both arms not raised enough to horizontal",
+        "Error2": "Participant does not turn torso enough",
+        "Error3": "Participant lifts buttocks from chair and leans sideways during rotation"
+      }
+    }
+  },
+  "method": {
+    "entry_point": "keraal.py",
+    "candidate": "elk.Error1",
+    "training_targets": ["reviewed_global_Correct", "reviewed_global_worst_Error1"],
+    "output_granularity": "clip",
+    "Correct_means_all_errors_clear": false,
+    "capture_gate": {"view": "front", "condition": "seated", "complete": true, "uninterrupted": true},
+    "capture_gate_basis": "candidate_adapter_restriction_not_validated_KERAAL_view_requirement",
+    "required_landmarks": "keraal.py:JOINTS",
+    "coordinate_units": "image_pixels",
+    "missing_joint_policy": "reject_clip",
+    "caller_verified_inputs": ["canonical_participant_id", "original_take_id", "original_frame_ids", "source_times", "image_dimensions", "anatomical_sides", "joint_validity", "source_mapping_provenance", "capture_completeness", "view"],
+    "tracker_policy": "same_verified_tracker_preprocessing_and_sampling_policy_for_training_and_live",
+    "upstream_pose_hazards": ["horizontal_image_flip", "no_visibility_scores", "frame_counter_advances_only_on_successful_detection"],
+    "participant_split": "nonempty_disjoint_exhaustive_canonical_participants_before_fitting",
+    "normalization": "training_only",
+    "unsupported_outputs": ["rtk_predictions", "elk.Error2", "elk.Error3", "chair_contact", "vertebral_measurements", "temporal_localization", "clinical_probability", "service_Finding"]
+  },
+  "verification": {
+    "annotation_variants": "unverified",
+    "participant_mapping_across_subsets_and_visits": "unverified",
+    "group3_filename_labels": "unverified",
+    "capture_requirements": "unverified",
+    "protocol_visual_validation": "unverified",
+    "tracker_and_source_mapping": "unverified",
+    "Quest_extraction_path": "unverified",
+    "Kinect_or_SMPL_to_image_landmarks": "unverified",
+    "held_out_dataset_evaluation": "not_performed",
+    "live_support": "unsupported"
+  }
+}
