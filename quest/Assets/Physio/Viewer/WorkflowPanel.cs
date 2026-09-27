@@ -187,6 +187,7 @@ namespace Physio.Viewer
         private void Show(Screen next, bool resetPage = true)
         {
             if ((CaptureBusy || NeedsCaptureSave) && next != Screen.Capture) { status.text = "Finish saving this recording before leaving capture."; return; }
+            if (session == null || result == null) ClearPatternReview();
             var previousScreen = screen;
             if (next != Screen.Review && next != Screen.Demo)
                 viewer.GetComponent<ReplayPlayInteractions>()?.SetPlayMode(false);
@@ -281,6 +282,7 @@ namespace Physio.Viewer
         private async void OpenSession(SessionRecord selected, Guid? version = null)
         {
             session = selected; result = null; manifest = null;
+            ClearPatternReview();
             primarySessionId = null; microscopeHold = false;
             savedTake = attemptedTake = captureSaveError = "";
             var chosenVersion = version ?? selected.ResultId;
@@ -288,10 +290,12 @@ namespace Physio.Viewer
             {
                 busy = true;
                 Show(Screen.Processing);
+                var generation = patternGeneration;
                 heading.text = "Opening saved assessment";
                 try
                 {
                     var loaded = await Task.Run(() => store.OpenResult(selected.PatientId, selected.Id, chosenVersion));
+                    if (!PatternIdentityMatches(generation, selected.PatientId, selected.Id)) return;
                     await BindResult(loaded, markFirstDisplay: chosenVersion == selected.ResultId && !selected.CaptureToLoadedSeconds.HasValue);
                 }
                 catch (Exception exception)
@@ -406,11 +410,27 @@ namespace Physio.Viewer
         private async Task BindResult(CachedResult loaded, bool markFirstDisplay = false)
         {
             var selectedSession = session;
-            var opened = await Task.Run(() => (Replay: loaded.LoadReplay(), Capture: selectedSession == null ? null : store.Capture(selectedSession)));
+            if (selectedSession == null || patient?.Id != selectedSession.PatientId) return;
+            var loadedManifest = loaded.Manifest;
+            if ((string?)loadedManifest["patient_id"] != selectedSession.PatientId.ToString() ||
+                (string?)loadedManifest["session_id"] != selectedSession.Id.ToString() ||
+                (string?)loadedManifest["test_type"] != selectedSession.TestType)
+                throw new InvalidDataException("The saved result belongs to another patient or test.");
+            ClearPatternReview();
+            var generation = patternGeneration;
+            var opened = await Task.Run(() =>
+            {
+                var replay = loaded.LoadReplay();
+                var capture = store.Capture(selectedSession);
+                return (Replay: replay, Capture: capture, Patterns: LoadPatterns(replay, capture, selectedSession));
+            });
             var data = opened.Replay;
-            if (this == null) return;
-            result = loaded; manifest = loaded.Manifest; finding = null;
+            if (!PatternIdentityMatches(generation, selectedSession.PatientId, selectedSession.Id)) return;
+            result = loaded; manifest = loadedManifest; finding = null;
             reviewCapture = opened.Capture; selectedObservation = null; showObservations = true;
+            patternReview = opened.Patterns;
+            if (patternReview.Completed)
+                Debug.Log("PHYSIO_PATTERNS_READY method=" + MotionPatternClassifier.MethodId + " count=" + patternReview.Items.Length);
             insightsVisible = data == null;
             GetComponent<HandReplayPanel>().SetContext(patient == null || session == null ? "Replay" :
                 patient.DisplayName + " · " + ReviewEvidence.TestName(session.TestType) + " · " +
@@ -423,11 +443,11 @@ namespace Physio.Viewer
                 StartCoroutine(AfterRenderedFrame(frameCompletion));
                 await frameCompletion.Task;
                 frameCompletion = null;
-                if (this == null) return;
+                if (!PatternIdentityMatches(generation, selectedSession.PatientId, selectedSession.Id, loaded.ResultId)) return;
                 var patientId = patient.Id; var sessionId = session.Id;
                 var capture = recorder.LastCapture;
                 var displayedTicks = System.Diagnostics.Stopwatch.GetTimestamp();
-                session = await Task.Run(() =>
+                var displayedSession = await Task.Run(() =>
                 {
                     double? elapsed = null;
                     var current = store.Session(patientId, sessionId);
@@ -444,10 +464,11 @@ namespace Physio.Viewer
                     }
                     return store.MarkReplayLoaded(patientId, sessionId, loaded.ResultId, elapsed);
                 });
-                if (this == null) return;
-                RenderReview();
+                if (!PatternIdentityMatches(generation, patientId, sessionId, loaded.ResultId)) return;
+                session = displayedSession;
             }
             busy = false;
+            if (screen == Screen.Review) RenderReview();
         }
 
         private static IEnumerator AfterRenderedFrame(TaskCompletionSource<bool> completion)
@@ -459,7 +480,8 @@ namespace Physio.Viewer
             heading.text = finding["observation_id"] != null ? InsightPresentation.EstimatedLabel((string)finding["label"]!) : (string)finding["label"]!;
             var interval = finding["evidence"]!;
             var methodId = (string?)finding["method_id"];
-            var method = manifest?["methods"]?.FirstOrDefault(m => (string?)m["method_id"] == methodId);
+            var method = methodId == MotionPatternClassifier.MethodId ? MotionPatternClassifier.Method()
+                : manifest?["methods"]?.FirstOrDefault(m => (string?)m["method_id"] == methodId);
             var text = finding["observation_id"] != null
                 ? InsightPresentation.Details(finding, EvidenceView(finding), method)
                 : $"{finding["explanation"]}\n\n{InsightPresentation.Source(finding, EvidenceView(finding))} · {interval["condition"]}\n" +

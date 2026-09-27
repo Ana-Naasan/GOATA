@@ -33,7 +33,7 @@ static class UIEvidenceChecks
         Check(InsightPresentation.SourceLabel(null, 1, 2).StartsWith("Source take"), "unknown view not fabricated");
         var observation = JObject.Parse("{\"label\":\"Torso lean\",\"method_id\":\"geometry\",\"explanation\":\"Fitted torso orientation.\",\"region\":\"torso\",\"side\":\"not_applicable\",\"evidence\":{\"start_s\":1.0,\"end_s\":2.0,\"quality\":\"limited\",\"quality_reason\":\"Occlusion possible.\"},\"limitations\":[\"Fitted joints may be hidden.\",\"Not a lumbar measurement.\"],\"metrics\":[{\"name\":\"peak\",\"value\":12.25,\"unit\":\"deg\"}]}");
         var card = InsightPresentation.Card(observation, "front");
-        Check(card.Contains("Estimated") && card.Contains("12.3°") && card.Contains("Front take") && card.Contains("Limited evidence"), "card estimate value source limitation labels");
+        Check(card.Contains("Estimated") && card.Contains("12.3°") && card.Contains("Front take") && card.Contains("Pose estimate"), "card estimate value source and measurement basis labels");
         Check(InsightPresentation.Summary(observation, "front").Contains("Fitted joints may be hidden."), "specific limitation visible outside details");
         var method = JObject.Parse("{\"name\":\"Joint geometry\",\"version\":\"v2\"}");
         var detail = InsightPresentation.Details(observation, "front", method);

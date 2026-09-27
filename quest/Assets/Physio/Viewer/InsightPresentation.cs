@@ -48,7 +48,7 @@ namespace Physio.Viewer
 
         public static string Card(JObject item, string? view) =>
             Compact(EstimatedLabel((string)item["label"]!), 58) + "\n" + Compact(Metrics(item), 68) +
-            "\n" + Source(item, view) + " · Limited evidence";
+            "\n" + Source(item, view) + " · Pose estimate";
 
         public static string Summary(JObject item, string? view) =>
             "Selected: " + (string)item["region"]! + " · " + Source(item, view) +

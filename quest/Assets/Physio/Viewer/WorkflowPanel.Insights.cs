@@ -24,13 +24,17 @@ namespace Physio.Viewer
         {
             heading.text = result?.ResultId == session?.ResultId ? "Movement review · latest" : "Movement review · saved version";
             if (manifest == null) { body.text = "No validated result is loaded."; return; }
-            var observations = (manifest["observations"] as JArray)?.OfType<JObject>().ToArray() ?? Array.Empty<JObject>();
+            var observations = patternReview.Items;
+            if (observations.Length == 0)
+                observations = (manifest["observations"] as JArray)?.OfType<JObject>().ToArray() ?? Array.Empty<JObject>();
+            var showingSavedObservations = patternReview.Items.Length == 0 && observations.Length > 0;
+            var observationTab = showingSavedObservations ? "Observations" : "Patterns";
             var assessment = Feature(session?.TestType == "barefoot" ? "foot" : "movement");
             var assessmentStatus = InsightPresentation.AssessmentStatus(session?.TestType ?? "elk", (string?)assessment?["status"], ((JArray)manifest["findings"]!).Count);
-            var observationStatus = InsightPresentation.ObservationStatus((string?)manifest["schema_version"], (string?)Feature("observations")?["status"], observations.Length);
+            var observationStatus = (showingSavedObservations ? "Saved observations · " + observations.Length + " estimates · " : "") + PatternStatus();
             var pages = Math.Max(1, (observations.Length + 2) / 3);
             page = InsightPresentation.ClampObservationPage(page, observations.Length, showObservations);
-            SetAction(observationsTab, showObservations ? "● Observations" : "Observations",
+            SetAction(observationsTab, (showObservations ? "● " : "") + observationTab,
                 () => { showObservations = true; Show(Screen.Review); });
             SetAction(assessmentTab, showObservations ? "Findings" : "● Findings",
                 () => { showObservations = false; Show(Screen.Review); });
@@ -41,10 +45,11 @@ namespace Physio.Viewer
             var elapsed = result?.ResultId == session?.ResultId && session?.CaptureToLoadedSeconds is double seconds
                 ? $" · {seconds:0.0}s capture → display" + (session.CaptureTimingBasis == "monotonic" ? "" : " (wall-clock estimate)") : "";
             status.text = "RESEARCH · NOT CLINICALLY VALIDATED" + elapsed +
-                (showObservations && pages > 1 ? $" · observations {page + 1}/{pages}" : "") +
+                (showObservations && pages > 1 ? $" · {observationTab.ToLowerInvariant()} {page + 1}/{pages}" : "") +
                 "\n" + (showObservations ? observationStatus : assessmentStatus.Replace("\n", " · "));
             if (showObservations && observations.Length > 0) RenderObservations(observations);
-            else RenderAssessmentOrUnavailable(assessmentStatus, observationStatus, assessment);
+            else RenderAssessmentOrUnavailable(assessmentStatus, assessment);
+            SetPatternRerunAction();
         }
 
         private void RenderObservations(JObject[] observations)
@@ -66,7 +71,6 @@ namespace Physio.Viewer
             { finding = selectedObservation; detailPage = 0; Show(Screen.Finding); });
             var detailLayout = rows[3].GetComponent<LayoutElement>(); detailLayout.minHeight = detailLayout.preferredHeight = 44;
             SetAction(primary, "View moment", () => FocusObservation(selectedObservation!, true));
-            SetAction(secondary, "Inspect original", () => OpenEvidence(selectedObservation!));
         }
 
         private void FocusObservation(JObject item, bool openSeparate)
@@ -85,11 +89,11 @@ namespace Physio.Viewer
             }
         }
 
-        private void RenderAssessmentOrUnavailable(string assessmentStatus, string observationStatus, JToken? assessment)
+        private void RenderAssessmentOrUnavailable(string assessmentStatus, JToken? assessment)
         {
             SetBodyHeight(180); body.fontSize = 22;
             body.text = showObservations
-                ? observationStatus + "\n" + InsightPresentation.Compact((string?)Feature("observations")?["detail"] ?? "This saved result contains no estimated observations.", 260)
+                ? (classifyingPatterns ? "Classifying the saved reconstructed pose…" : patternReview.Detail)
                 : assessmentStatus + "\n" + InsightPresentation.Compact((string?)assessment?["detail"] ?? "No evaluated assessment is available.", 260);
             var findings = showObservations ? Enumerable.Empty<JObject>() : ((JArray)manifest!["findings"]!).OfType<JObject>();
             var choices = findings.Select(item => ((string)item["label"]!, (Action)(() =>

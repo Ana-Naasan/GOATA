@@ -277,6 +277,26 @@ Result version 1.1 carries `observations` separately from evaluated `findings`, 
 
 Each reported extreme points to its actual original frame/time. Reconstructed finite joints do not establish joint visibility. Report the estimates as limited evidence, retain method/version and limitations, and omit quantities with invalid or degenerate required geometry. Numerical tests must cover source binding, gaps, missing landmarks, reflection, heading, translation, scaling and angle wrapping. Preserve historical result 1.0 readers, and release the updated Quest client before enabling result 1.1 on a service.
 
+The September 27 fast classification request adds **local descriptive movement
+patterns** for ELK, RTK and Walking. Derive them from the selected saved replay's
+original, validated joints. ELK names the anatomical direction of sampled peak
+lateral bend; RTK describes unsigned shoulder-to-pelvis rotation at displayed
+precision; Walking compares sampled knee-bending peaks using the same eligible
+source frames, with each leg retaining its own evidence moment. These categories
+are geometric descriptions, not correct/incorrect form, gait diagnoses or clinical
+findings. Equal or zero values refer explicitly to 0.1-degree display precision.
+Missing support stays unavailable, not a normal result.
+
+Opening a saved result recalculates patterns with the installed local method.
+A visible **Rerun classifications** action repeats that calculation from retained,
+unscaled replay data, without uploading, reconstructing, changing the saved result
+or rerecording. Playback, display scale and Play effects cannot affect the inputs.
+Keep local pattern/method objects separate from immutable service manifests and
+retain their method/version and research limitations in Details. Historical saved
+results with usable replay geometry are eligible; no result schema change is
+required. A recording without a completed reconstruction still uses the existing
+processing flow. Full reprocessing of saved recordings remains a separate action.
+
 Do not add step counts/cadence until a step-event detector is verified against labelled source video. Physical speed, stride length and other distance measures need calibration and reference comparison. Gait diagnoses, injury risk and treatment advice are outside this implementation.
 
 ### 7.3.1 Historical foot analysis

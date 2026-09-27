@@ -1,7 +1,7 @@
 # Quest app
 
 **Last updated:** September 27, 2026. The UI redesign with restored automatic
-connection setup and corrected camera encoding is version **0.3.2 / code 9**
+connection setup and corrected camera encoding is version **0.3.3 / code 10**
 on `codex/hci-quest-ui`, based on `main` at `1a9f9e3`. It uses one main workspace,
 a compact replay HUD, bounded movable panels, explicit camera framing/countdown,
 visual movement examples, grounded replay, anatomical evidence highlights and an
@@ -116,6 +116,22 @@ Capture publication and cached results validate identities, sizes and hashes;
 accepted-upload retries retain the idempotency key. Original captures remain
 immutable. Heavy file, network, JSON and importer work runs outside Unity's
 main thread; scene changes and mesh binding run on the main thread.
+
+### Descriptive classifications and reruns
+
+Saved ELK, RTK and Walking replays open with locally calculated **Patterns**.
+These describe peak lateral-bend direction, shoulder-to-pelvis rotation, and
+left/right knee-bending peak comparisons plus trunk inclination. They remain
+estimates from reconstructed pose; they do not label clinical correctness or
+diagnose gait. Open Details for the exact method and limitations, or View moment
+for the original source-linked replay position.
+
+**Rerun classifications** uses the saved, unscaled 3D replay entirely on-device.
+No new recording, upload or GPU reconstruction is needed. The current local method
+also runs when reopening older saved results with usable replay geometry. Original
+recordings and saved result versions are unchanged; display resizing and playback
+do not affect analysis. If a test has no completed replay yet, use Process / retry
+on its saved capture first.
 
 ### Private processing connection
 

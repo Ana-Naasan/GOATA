@@ -1,12 +1,15 @@
 # Codex session handoff
 
-**Last updated:** September 27, 2026. The UI redesign with restored automatic
-connection setup and corrected camera encoding **0.3.2 / Android code 9** is
-built, installed wirelessly and launched on Quest 3. The headset authenticated against the existing private
-processing service; all **305** saved app files survived unchanged. Source is on
-`codex/hci-quest-ui` in `/Users/baderasadi/.codex/worktrees/hci-quest-ui/HTH`, based
-on `main` at `1a9f9e3`. M1 and clinical evaluation remain incomplete: no new
-participant capture → GPU → loaded saved review was verified during this UI work.
+**Last updated:** September 27, 2026. Quest **0.3.3 / Android code 10** is
+built, installed wirelessly and launched with automatic private-service
+connection. It adds local descriptive ELK/RTK/Walking patterns and reruns from
+saved replay geometry; all **423** current saved app files survived unchanged.
+Source is on `codex/hci-quest-ui` in
+`/Users/baderasadi/.codex/worktrees/hci-quest-ui/HTH`, based on `main` at `1a9f9e3`.
+A fresh Walking service job completed and its actual saved reconstruction passed
+local classification/source-binding checks. Evaluated exercise correctness,
+clinical gait classification and wearer acceptance of the new rerun UI remain
+incomplete. Historical release evidence is retained below.
 
 ## UI redesign and wireless deployment
 
@@ -220,6 +223,78 @@ PID **42919** is running on the Mac and logged the verified mapping; its PID and
 log are in the incident evidence directory. This is a background helper
 started for this session, not a login or system-wide service. Stop it with
 `kill 42919` when the private demo route is no longer needed.
+
+## Descriptive classifications and local reruns (0.3.3)
+
+The user requested the fastest classification path for all three tests and reruns
+without rerecording. The private service's new Walking run had succeeded in
+**68.17 seconds** with **293 valid reconstructed source frames**. Its result had
+geometric observations but zero evaluated findings; the old cards consequently
+repeated “Limited evidence.” No trained, evaluated clinical classifier was
+installed. The selected implementation is a local descriptive classifier over
+the saved original replay, with no backend, model, dependency or schema change.
+
+- ELK describes anatomical peak lateral-bend direction; RTK describes unsigned
+  relative shoulder/pelvis rotation; Walking compares each knee's bending peak
+  and describes trunk inclination. Bilateral comparisons use common eligible
+  frames, retaining each leg's own exact source frame and time.
+- Opening a saved result calculates Patterns automatically. **Rerun
+  classifications** reuses the validated, unscaled replay locally, without
+  uploads, reconstruction, video edits or saved-result mutation. Original evidence
+  remains available through Details. Patient/session/result generation checks
+  prevent stale asynchronous results from appearing in another review.
+- Cards say “Pose estimate”; Details retain method/version and limitations.
+  These categories do not establish exercise correctness, gait diagnosis,
+  clinical confidence or treatment. Missing support remains unavailable.
+
+Tests were written before implementation: **76 pattern checks** passed, with
+**100% scoped line/branch/method coverage** of the pure classifier (160 lines,
+116 branches). This excludes Unity UI integration and clinical accuracy.
+**33 UI evidence checks** and **673 workflow checks** passed. General and C# reviews checked original data
+isolation, separate peak evidence moments, capture eligibility and rerun identity.
+Saved service observations remain available as an explicitly labelled fallback
+when local patterns are empty or unavailable. Error logs include operation and
+exception type only. Scoped security review and `pip-audit` found no blocker.
+
+The pre-existing SPEC 7.2 requirement for genuine, evaluated exercise-specific
+ELK/RTK findings is still incomplete. This descriptive update does not replace
+that requirement or turn the offline candidate into an installed clinical method.
+
+A private, read-only proof loaded the actual existing Walking reconstruction,
+checked all output frame/time bindings and deterministic reruns: three patterns,
+with separate original evidence moments for the two knee peaks. Calculation took
+**12.62 ms on the Mac**; this is not a Quest timing or clinical-accuracy measurement.
+Participant measurements are retained only in private proof, not this repository.
+No original video was retrieved.
+Proof and reconstruction remain outside Git at
+`/Users/baderasadi/Library/Caches/HTH/classification-033-proof/`.
+
+Unity **6000.0.66f2**, Meta Interaction SDK **85.0.0**, Android API 34/ARM64:
+`FixtureBuild.Build` exited 0 with `Build Finished, Result: Success`. Signed APK:
+**86,358,802 bytes**, SHA-256
+`9141decd3a17415f2a8ed6508bfdb9207382da6e4b43eeda19af20773af02f16`.
+Wireless `adb install -r` succeeded; installed **0.3.3 / code 10** and the installed
+APK hash match. All **423** saved app files matched before and after installation.
+No app data was cleared or video recovered/rewritten. The private session launcher
+reprovisioned the existing connection and consumed the one-use configuration.
+Startup PID **13406** logged `PHYSIO_VIEWER_READY` and `PHYSIO_CONNECTION_READY`
+at **08:14:30 EDT**, with no managed exception in the sampled log.
+
+Commands: the existing cached `dotnet run --project quest/Checks/PatternChecks.csproj`,
+`UIEvidenceChecks.csproj` and `WorkflowChecks.csproj`; Unity batch build with
+`-buildTarget Android -job-worker-count 2 -executeMethod FixtureBuild.Build`;
+`apksigner verify --verbose`; `aapt dump badging`; wireless `adb install -r`;
+device before/after SHA-256 checks; existing private launcher and PID-specific
+`adb logcat`. Build, APK, preservation and startup proof are outside Git at
+`/Users/baderasadi/Library/Caches/HTH/hci-ui-deploy-033/`. Unrelated generated
+scene-ID churn and TMP serialization changes were restored.
+
+Next wearer check: open an existing completed patient test → **Patterns** →
+**Rerun classifications** → **View moment**. This needs no new recording or
+processing-service connection. A test without completed reconstruction still
+uses the existing saved-capture processing flow. The full headset button flow
+has not yet been independently exercised; startup and actual saved geometry
+classification were verified separately.
 
 ## Mohammad's persistent inference experiment review
 
