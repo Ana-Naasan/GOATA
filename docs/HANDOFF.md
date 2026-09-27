@@ -189,6 +189,38 @@ Source changes remain on `codex/hci-quest-ui`; the private service validation
 update and Quest 0.3.2 deployment are verified, while new live end-to-end inference
 and wearer acceptance remain to be tested.
 
+## Wireless route interruption (07:44 EDT)
+
+After a transient wireless ADB disconnect, its reverse forwarding list was empty.
+The app process still held its session credentials, but processing and connection
+checks could no longer reach Quest loopback 8443. The private service remained
+healthy and had accepted no new job; this was a transport failure before inference.
+Restoring `adb reverse tcp:8443 tcp:8443` immediately repaired the route. An
+authenticated read-only random-job lookup through Mac → Quest → ADB reverse →
+private HTTPS returned the expected `404 NOT_FOUND`; no upload or job was created.
+
+At the user's request the already-verified **0.3.2 / code 9** APK was reinstalled
+wirelessly, preserving all **348** current saved-file hashes. Existing session
+provisioning relaunched PID **8401**; `PHYSIO_VIEWER_READY` and
+`PHYSIO_CONNECTION_READY` appeared at **07:47:42 EDT**. No videos were recovered,
+rewritten or uploaded by this repair. The existing saved test can be retried.
+Evidence: `/Users/baderasadi/Library/Caches/HTH/incident-20260927-0744/`.
+
+The minimal Mac-side route keeper is
+`quest/Tools/keep_processing_connection.py --serial <headset-ip>:5555`.
+It checks every five seconds, reconnects only the named wireless endpoint when
+needed, and restores/validates just port 8443. Each ADB call has an eight-second
+timeout. It neither handles credentials nor restarts the app or submits jobs.
+The existing SSH tunnel and session provisioning remain in use.
+
+Tests were written before implementation: **15 passed**, **96%** scoped branch
+coverage, Ruff and whitespace checks clean. General, Python and security reviews
+found no functional/security blocker. The live `--once` check passed. Route keeper
+PID **42919** is running on the Mac and logged the verified mapping; its PID and
+log are in the incident evidence directory. This is a background helper
+started for this session, not a login or system-wide service. Stop it with
+`kill 42919` when the private demo route is no longer needed.
+
 ## Mohammad's persistent inference experiment review
 
 Reviewed Mohammad's `7db2d4c` against `main` at `554d4b7` on

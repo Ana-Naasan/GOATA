@@ -133,6 +133,19 @@ authenticated lookup of a random nonexistent job; it uploads no recording and
 starts no inference. It leaves local recording controls usable while offline.
 An authenticated connection does not establish GPU/model readiness.
 
+Wireless ADB reconnects can erase reverse forwarding. While using this private
+route, run the local repair helper alongside the existing SSH tunnel:
+
+```sh
+python3 quest/Tools/keep_processing_connection.py --serial <headset-ip>:5555
+```
+
+It checks the route every five seconds, reconnects the named headset when needed,
+and restores only `tcp:8443` forwarding. `--once` checks/repairs once; Ctrl-C stops
+the loop. It does not read credentials, restart the app, upload recordings or
+submit processing. Keep the Mac awake. A full app restart still needs the existing
+private session-provisioning launcher.
+
 ### Check camera encoding orientation
 
 For a development build, launch with Android intent boolean
