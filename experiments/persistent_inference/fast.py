@@ -30,7 +30,12 @@ def sampling(frames,hz,count):
         raise ValueError('invalid source observations')
     def nearest(target,indices):
         return min(indices,key=lambda i:(abs(times[i]-target),i))
-    targets=range((times[-1]-times[0])*hz//10**9+1)
+    duration=times[-1]-times[0]
+    target_count=duration*hz//10**9+1
+    # Match plan_input's tolerance for rounded capture-clock endpoints.
+    if abs(Fraction(target_count*10**9,hz)-duration) <= 1:
+        target_count+=1
+    targets=range(target_count)
     chosen=sorted(set(nearest(times[0]+Fraction(i*10**9,hz),range(len(times))) for i in targets))
     # Hold the latest available observation, with target PTS rounded to the
     # source's integer-nanosecond clock. Never borrow a later observation.

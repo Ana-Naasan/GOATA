@@ -98,6 +98,7 @@ class PipelineTests(unittest.TestCase):
 
     def test_four_segment_split_preserves_original_ids_pts_and_take_origins(self):
         from buffered import split
+        from processing.reconstruction.runtime import plan_input
         with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as folder:
             root = Path(folder)
             video, calibration = root/'source.mp4', root/'calib.txt'
@@ -121,6 +122,8 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(len({row['take_id'] for row in rows}),4)
             for i, row in enumerate(rows):
                 doc = json.loads((output/row['directory']/'sidecar.json').read_text())
+                self.assertEqual(doc['camera']['calibration_status'], 'estimated')
+                self.assertEqual(plan_input(doc)['intrinsics_status'], 'estimated')
                 self.assertEqual([f['frame_id'] for f in doc['frames']], list(range(i*60,(i+1)*60)))
                 self.assertEqual(doc['clock']['origin_pts_ns'], str(i*2*10**9))
                 self.assertEqual(doc['original_origin_seconds'],'0')
@@ -142,6 +145,20 @@ class PipelineTests(unittest.TestCase):
         doc['camera']['intrinsics']['fx'] = 0
         with self.assertRaises(ValueError):
             plan_input(doc)
+
+    def test_rounded_endpoint_remains_an_observation(self):
+        from processing.reconstruction.runtime import plan_input
+        for count in (5, 11, 17, 59):
+            with self.subTest(count=count):
+                doc = sidecar(count)
+                plan = plan_input(doc)
+                sample = fast.sampling(doc['frames'], 15, len(plan['selected_indices']))
+                self.assertEqual(sample['observation_indices'], list(range(0, count, 2)))
+                self.assertEqual(sample['observation_indices'][sample['grid_to_observation'][-1]], count-1)
+                origin = int(doc['frames'][0]['pts_ns'])
+                for i, selected in enumerate(sample['grid_to_observation']):
+                    self.assertLessEqual(int(sample['observations'][selected]['pts_ns']),
+                                         origin+round(Fraction(i*10**9, 30)))
 
     def test_irregular_mapping_never_uses_future_sample(self):
         times = [0, 20, 73, 94, 134, 167, 199, 241, 267, 300]

@@ -129,7 +129,7 @@ def split(args):
         sidecar = dict(schema_version='1.0', take_id=str(uuid.uuid4()),
                        adapter=dict(name='derived-public-video-fixture', version='1'),
                        image=dict(width_px=1920, height_px=1080, rotation_degrees=0, mirrored=False),
-                       camera=dict(id='WHAM-drone-provided-calibration', calibration_status='calibrated',
+                       camera=dict(id='WHAM-drone-provided-calibration', calibration_status='estimated',
                                    intrinsics=dict(zip(('fx','fy','cx','cy'), kvalues)),
                                    distortion_model='none', distortion_coefficients=[]),
                        clock=dict(id=provenance['source_id'], unit='nanoseconds', origin_pts_ns=frames[0]['pts_ns']),
