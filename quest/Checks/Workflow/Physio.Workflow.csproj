@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>netstandard2.1</TargetFramework><LangVersion>9.0</LangVersion><Nullable>enable</Nullable><EnableDefaultCompileItems>false</EnableDefaultCompileItems><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup>
+  <ItemGroup><CachedNewtonsoft Include="../../Library/PackageCache/com.unity.nuget.newtonsoft-json@*/Runtime/Newtonsoft.Json.dll" /><CachedNewtonsoft Condition="'@(CachedNewtonsoft)' == ''" Include="$(HOME)/Library/Caches/HTH/Unity-PassthroughCameraApiSamples/Library/PackageCache/com.unity.nuget.newtonsoft-json@*/Runtime/Newtonsoft.Json.dll" /></ItemGroup>
+  <PropertyGroup><NewtonsoftJsonPath Condition="'$(NewtonsoftJsonPath)' == ''">@(CachedNewtonsoft)</NewtonsoftJsonPath></PropertyGroup>
+  <ItemGroup><Compile Include="../../Assets/Physio/Workflow/*.cs" /><Compile Include="../../Assets/Physio/Replay/*.cs" /><Reference Include="Newtonsoft.Json"><HintPath>$(NewtonsoftJsonPath)</HintPath></Reference></ItemGroup>
+</Project>

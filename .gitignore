@@ -36,5 +36,10 @@ quest/[Oo]bj/
 quest/[Bb]uild*/
 quest/[Ll]ogs/
 quest/[Uu]ser[Ss]ettings/
+quest/*.csproj
+quest/*.sln
+quest/*.slnx
+quest/.utmp/
+quest/.vscode/
 *.apk
 *.aab

@@ -1,54 +1,82 @@
 # Physio Motion Replay
 
-A Meta Quest 3 physiotherapy demo: record a supported test, then walk around a translucent blue replay of the participant with an aligned skeleton and evidence-linked findings.
+Record a supported test through Meta Quest 3, then inspect a translucent blue body,
+aligned skeleton and source-linked evidence. The practitioner chooses corrections.
 
-**Current state:** executable capture/replay contracts, a synthetic importer fixture, and a tested local upload/job/artifact service. Real inference, the Quest app and assessment features remain unverified. The normal service retains accepted recordings and reports `PROCESSING_FAILED` until inference is integrated.
+**Last updated:** September 26, 2026. Capture, local patient history, processing,
+replay import and the native Meta UI are implemented together. A public-video
+GVHMR run produced real geometry on an RTX 3070. A fresh Quest recording has not
+yet completed the full path. Automated ELK/RTK findings, automated foot assessment,
+a useful real Quest microscope result and on-device performance remain incomplete.
+See [the current handoff](docs/HANDOFF.md) for the exact verification boundary.
 
-## First handoff: capture and replay contracts
+## Run the local processing service
 
-From the repository root:
-
-```sh
-uv sync --locked --python 3.11
-uv run python -m processing.contracts validate tests/contracts/fixtures
-uv run --locked pytest tests/contracts --cov=processing.contracts --cov-report=term-missing
-```
-
-The [fixture guide](tests/contracts/fixtures/README.md) describes the expected
-geometry, source times, masks and binary checksums. Hamza can use it to build the
-Unity importer without waiting for reconstruction. The fixture contains no
-participant recording or anatomical model. Regenerate a copy with
-`uv run python -m processing.contracts generate /tmp/physio-replay-fixture`.
-
-Executable schemas live in `processing/schemas`; semantic validation is in
-`processing/contracts.py`. The service Python environment is separate from
-Mohammad's model-specific environment.
-
-## Run the local service
-
-There are no user accounts or login screens. Quest owns patient names and
-histories; the server receives opaque patient/session/take IDs. One deployment
-token protects all jobs in this private demo.
+Use Python 3.11 or later for the service. Its environment is separate from the
+GPU model environment in [GPU setup](processing/reconstruction/GPU_SETUP.md).
 
 ```sh
-uv sync --locked --python 3.11
+uv sync --locked --python 3.11 --extra microscope
 export PROCESSING_TOKEN="$(uv run --locked python -c 'import secrets; print(secrets.token_urlsafe(32))')"
 export PROCESSING_DATA_DIR="$PWD/var/processing"
-uv run --locked python -m processing --host 127.0.0.1 --port 8000
+uv run --locked --extra microscope python -m processing --host 127.0.0.1 --port 8000
 ```
 
-Keep the token in this shell or a private secret store; retain the same value
-when connecting the client or restarting. Do not commit it or print it in logs.
-The CLI requires a TLS certificate and key for any non-loopback listener. This
-command is a local run, not a deployment. Use one process; a filesystem lock
-rejects another process using the same storage directory.
+Keep the token private and retain it across restarts. Patient names and histories
+stay on Quest; the service receives opaque patient/session/take IDs. One deployment
+token protects this private demo. The CLI requires a TLS certificate and key for
+non-loopback listeners. This command starts a local service, not a deployment.
+Use one process; a filesystem lock rejects a second process using the same store.
 
-### Client request examples
+The `microscope` extra installs NumPy, OpenCV and PyAV. Without it, the microscope
+returns an explicit unavailable result. Installing the extra does not install
+GVHMR, CUDA, checkpoints or registered body assets.
 
-`CAPTURE_MANIFEST` and `CAPTURE_ZIP` are paths to the client's capture manifest
-and flat ZIP. Use `protocol_id` equal to `elk`, `rtk` or `barefoot` and
-`protocol_version: "1.0"`. These are provisional capture identifiers; clinical
-protocols and supported finding labels remain dependent on the model work.
+### Connect real inference
+
+The service runs one operator-configured local command without a shell. Configure
+it **before** starting the service, after the independent GPU proof succeeds.
+Example paths below must point to the actual model environment and GVHMR checkout:
+
+```sh
+export PROCESSING_INFERENCE_COMMAND='["/absolute/model-env/bin/python","-m","processing.reconstruction.runtime"]'
+export PROCESSING_INFERENCE_CWD=/absolute/path/to/GVHMR
+```
+
+The worker appends `--video`, `--sidecar`, `--output` and `--pts-offset-ns 0`, adds
+the repository to `PYTHONPATH`, and removes `PROCESSING_TOKEN` from the child
+process environment. No SSH connection is embedded in the service. A container
+wrapper must expose the same CLI and map the supplied paths correctly; the
+standalone Docker commands in GPU setup do not configure that wrapper for you.
+The default unconfigured service retains accepted full-body captures and reports
+`PROCESSING_FAILED`; it never substitutes a synthetic replay.
+
+| Setting | Default and meaning |
+|---|---|
+| `PROCESSING_INFERENCE_TIMEOUT_SECONDS` | `900`; stops the inference process group when exceeded. |
+| `PROCESSING_INFERENCE_WORKSPACE_BYTES` | `805306368` (768 MiB); bounds inference scratch output. |
+| `PROCESSING_ALLOW_ESTIMATED_INTRINSICS` | `false`; `true` permits estimating intrinsics when the source marks them unavailable. |
+| `PROCESSING_ALLOW_UNVERIFIED_PINHOLE` | `false`; `true` permits only unknown distortion with no coefficients as an explicitly unverified pinhole approximation. |
+
+Quest's camera SDK supplies intrinsics but no distortion model/coefficients.
+Its sidecar preserves that unknown state. The pinhole opt-in records an
+approximation and labels processing intrinsics estimated; it does not calibrate
+the lens, establish physical scale or alter the original sidecar. Strict defaults
+reject that unverified camera model. Rectification and real alignment still need
+validation.
+
+Configured inference requires a per-frame encoded media timestamp mapping. Source
+camera nanoseconds remain unchanged; encoded microseconds are checked separately
+against every decoded image. Replay export preserves source references and root
+motion, converts surface and skeleton together, and validates artifact hashes.
+Assessment methods that are unavailable remain labelled unavailable even when
+reconstruction succeeds. Barefoot close-ups do not produce a full-body replay.
+
+### API request examples
+
+`CAPTURE_MANIFEST` and `CAPTURE_ZIP` identify a capture manifest and flat ZIP.
+Use protocol ID `elk`, `rtk` or `barefoot`, matching test type, and version `1.0`.
+These identify capture contracts, not clinically evaluated protocols.
 
 ```sh
 export CAPTURE_MANIFEST=/path/to/capture_manifest.json
@@ -70,63 +98,61 @@ curl --fail-with-body "http://127.0.0.1:8000/v1/jobs/$JOB_ID/artifacts/$ARTIFACT
   -H "Authorization: Bearer $PROCESSING_TOKEN" --output /tmp/replay-artifact
 ```
 
-Poll at `Retry-After` while active. A deliberate new processing attempt uses a
-new key. Failed and incomplete jobs return 409 from result/artifact routes.
-Until real inference lands, completed-result delivery is exercised through the
-explicitly synthetic worker in tests only; the runnable service has no fixture
-fallback. Verify artifact size and SHA-256 against the returned result inventory.
+Poll at `Retry-After` while active. A deliberate reprocessing attempt uses a new
+key and keeps the original capture/result version. Failed or incomplete jobs
+return 409 from result/artifact routes. Verify artifact size and SHA-256 against
+the result inventory before loading it.
 
-Defaults: 512 MiB ZIP, 1 MiB upload manifest, 1 GiB expanded files, 64 members,
-8 takes, 16 MiB sidecar/replay JSON, 256 MiB decoded replay, 1 GiB result output,
-8 GiB private storage budget, and a 120-second upload receive deadline. The
-service reserves disk space before acceptance and returns retryable 429 when
-busy or full. It never deletes accepted recordings to make room. MP4 checks
-currently verify signatures only; bounded decoding/frame-alignment validation
-must accompany the real inference adapter.
+Default ceilings: 512 MiB ZIP, 1 MiB upload manifest, 1 GiB expanded files,
+64 members, eight takes, 16 MiB metadata, 256 MiB decoded replay, 1 GiB result
+output, 8 GiB private storage and a 120-second upload deadline. The service
+reserves storage before acceptance and returns retryable 429 when busy/full.
+It never deletes accepted recordings to free space. Upload validation checks ZIP
+contents and MP4 signatures; the inference/microscope adapters additionally bound
+decoding and verify frame/time correspondence before producing their outputs.
 
-## Verify backend changes
+## Build and verify
+
+The [Quest guide](quest/README.md) contains the Unity build, device procedure and
+C# checks. The [fixture guide](tests/contracts/fixtures/README.md) describes the
+small authored contract fixture; it contains no participant or anatomical model.
 
 ```sh
-uv run --locked pytest --cov=processing --cov-report=term-missing
-uv run --locked ruff check processing tests
-uv run --locked pip-audit --progress-spinner off
+uv sync --locked --python 3.11 --extra microscope
+uv run --locked --extra microscope python -m processing.contracts validate tests/contracts/fixtures
+uv run --locked --extra microscope pytest --cov=processing --cov-report=term-missing -q
+uv run --locked --extra microscope ruff check processing tests
+uv run --locked --extra microscope pip-audit --progress-spinner off
 ```
 
-The suite includes a real loopback HTTP upload/poll/download/restart test,
-using synthetic input and a test-only worker. Run it alone with
-`uv run --locked pytest tests/backend/test_live_http.py -q`. These checks do not
-verify Quest rendering, usable video decoding, clinical models or turnaround.
+Tests include a real loopback upload → poll → download → restart flow, using
+synthetic inputs and a test-only worker. CPU tests cover model orchestration and
+real codec timestamps; they do not establish CUDA/model accuracy. On-device input,
+real-video reconstruction and held-out assessment evaluation remain separate gates.
 
-## Start a new Codex session
+## Required demonstration
 
-Open this repository and tell Codex:
+1. Select a patient and ELK seated flank stretch, RTK seated rotation or barefoot assessment.
+2. Confirm consent and follow the capture guidance. Keep original recordings.
+3. Process and load the saved result. The **1–2 minute** whole-path target remains unmeasured.
+4. Walk around the body, scrub, reverse, step frames, change speed and manipulate its display.
+5. Open genuine findings and matching source evidence; unsupported methods explain their status.
+6. Add a separate steady-hold take for microscope inspection and reopen dated tests from history.
 
-> Read AGENTS.md, docs/HANDOFF.md, docs/SPEC.md and docs/openapi.yaml. Continue with the next incomplete implementation milestone. Inspect the actual environment before choosing versions. Preserve the agreed features, use existing Meta components, and update the handoff with verified results before stopping.
+Foot assessment uses its own side/view/condition and calibration evidence. Motion
+magnification can amplify recording artifacts. Neither feature is complete merely
+because its capture or unavailable-state UI works.
 
 | Document | Purpose |
 |---|---|
-| [Complete specification](docs/SPEC.md) | Product decisions, capture and analysis, architecture, replay formats, implementation order and acceptance criteria. |
-| [Session handoff](docs/HANDOFF.md) | Actual completion state, blockers, next work and verification record. |
-| [Processing API contract](docs/openapi.yaml) | Proposed transfer, job status and result interface for Quest and the processing service. |
-| [Codex instructions](AGENTS.md) | Working rules and requirements that must survive session changes. |
+| [Specification](docs/SPEC.md) | Accepted scope, invariants and acceptance criteria. |
+| [Session handoff](docs/HANDOFF.md) | Current branch, verified results, blockers and next task. |
+| [Processing API](docs/openapi.yaml) | Upload, job status, results and artifact contracts. |
+| [Quest guide](quest/README.md) | App structure, checks, build and device evidence. |
+| [GPU setup](processing/reconstruction/GPU_SETUP.md) | Pinned model/assets, standalone inference and original GPU proof. |
+| [Agent instructions](AGENTS.md) | Project working rules. |
 
-## Agreed demonstration
-
-1. Select a patient and one of three tests: seated flank stretch, seated torso rotation, or barefoot assessment.
-2. Follow test-specific capture instructions through Quest 3.
-3. After capture, process the recording. Target **1–2 minutes** until results are loaded; this has not been benchmarked.
-4. Inspect the animated blue body and skeleton, pause, walk around it, scrub, reverse or change speed.
-5. Select a labelled finding to inspect its recorded evidence. The physio chooses any correction.
-6. Use motion magnification on suitable original footage and reopen saved tests from patient history.
-
-Barefoot assessment uses its own close-up evidence. It cannot create a full-body replay from cropped feet. Foot analysis and motion magnification remain required features with unresolved validation work.
-
-## Intended implementation
-
-- **Quest:** Unity/C#, OpenXR, Meta XR SDKs and Meta Horizon OS UI Set.
-- **Processing:** Python on compatible NVIDIA compute for the selected reconstruction model; a small HTTP service for transfer and jobs.
-- **Data:** local patient histories, original recordings, versioned results and explicit evidence provenance.
-
-The original hackathon deadline is **September 27, 2026, 10:00 a.m. America/Toronto**. Recheck the current time before allocating work. Source links and known limitations are in the specification.
-
-Do not commit participant recordings, identifying profile data, model weights, credentials or restricted datasets.
+The original deadline is **September 27, 2026, 10:00 a.m. America/Toronto**.
+Do not commit participant recordings, identifying profile data, model weights,
+credentials or restricted datasets. New sessions should read the handoff,
+specification and API contract before continuing the next incomplete milestone.

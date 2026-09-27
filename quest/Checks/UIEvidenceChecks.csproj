@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><EnableDefaultCompileItems>false</EnableDefaultCompileItems><Nullable>enable</Nullable></PropertyGroup><ItemGroup><Compile Include="UIEvidenceChecks.cs"/><Compile Include="../Assets/Physio/Viewer/ReviewEvidence.cs"/></ItemGroup></Project>

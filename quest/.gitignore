@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+Checks/coverage/
+# Upstream camera-sample detection weights are not part of the fixture viewer.
+*.sentis
+*.sentis.meta
+*.onnx.meta
+# Unity build hooks create these assets temporarily and remove them after packaging.
+/Assets/Resources/PerformanceTestRunInfo.json*
+/Assets/Resources/PerformanceTestRunSettings.json*
+/Assets/StreamingAssets/RuntimeActionBindings.json*

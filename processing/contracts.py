@@ -17,6 +17,8 @@ from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import ValidationError
 from jsonschema.validators import extend
 
+from processing.media_timing import validate_media_mapping
+
 SCHEMA_DIR = Path(__file__).with_name("schemas")
 MAX_DECODED_BYTES = 256 * 1024 * 1024
 MAX_JSON_BYTES = 16 * 1024 * 1024
@@ -121,6 +123,7 @@ def validate_sidecar(data: dict) -> None:
     """Validate original capture timing, calibration and available camera poses."""
     _schema_validate(data, "capture_sidecar.schema.json")
     frames = data["frames"]
+    validate_media_mapping(data.get("media"), len(frames))
     ids = [frame["frame_id"] for frame in frames]
     _require(len(set(ids)) == len(ids), "Duplicate source frame ID")
     times = [int(frame["pts_ns"]) for frame in frames]

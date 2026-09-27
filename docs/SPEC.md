@@ -1,12 +1,12 @@
 # Physio Motion Replay — complete implementation specification
 
 - **Version:** 1.0, September 26, 2026.
-- **State:** accepted product decisions and proposed engineering design; implementation is not yet verified.
+- **State:** accepted product decisions; component implementations and checks exist, with real Quest end-to-end and assessment acceptance incomplete. See `HANDOFF.md`.
 - **Target:** Meta Quest 3, with desktop/server processing.
 - **Original deadline:** September 27, 2026, 10:00 a.m. EDT / 14:00 UTC.
 - **Repository:** https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp
 
-This is the source of truth for a new Codex session. `HANDOFF.md` records what actually works. `openapi.yaml` defines the proposed service interface. No conversation history is required. Where a model, measurement or runtime remains unverified, that is an explicit engineering task, not permission to invent a result.
+This is the source of truth for a new Codex session. `HANDOFF.md` records what actually works. `openapi.yaml` defines the implemented service interface. No conversation history is required. Where a model, measurement or runtime remains unverified, that is an explicit engineering task, not permission to invent a result.
 
 ## 1. Product and success
 
@@ -129,9 +129,16 @@ If system UI interrupts recording, preserve the completed frames and mark the ta
 
 ### 5.1 Supported development route
 
+**Implementation checkpoint, September 26:** `quest/` contains the Unity app,
+native Meta UI Set patient/capture/review flow, bounded replay importer and private
+saved history. The first integrated APK built successfully; final-source device
+acceptance is pending. The labelled authored mannequin is a diagnostic selection,
+not a substitute for a patient recording. Current checks and build steps are in
+`quest/README.md`.
+
 Use Unity/C#, Unity OpenXR Plugin, Meta XR Core SDK and Meta XR Interaction SDK. Add the Passthrough Building Block. Use MRUK's documented camera-access components and samples for computer vision; ordinary passthrough display does not itself supply camera frames.
 
-Start from official samples, not a new XR interaction framework. Confirm a compatible Unity/editor/package combination on the actual headset and commit the resulting manifests/lockfiles. No exact editor/SDK version has been validated yet.
+Start from official samples, not a new XR interaction framework. Confirm a compatible Unity/editor/package combination on the actual headset and commit the resulting manifests/lockfiles. Unity 6000.0.66f2, Meta SDK 85.0.0 and OpenXR 1.15.1 have built and launched on Quest; the final workflow still needs device acceptance.
 
 macOS can build an Android APK when Unity Android Build Support, SDK/NDK and OpenJDK are installed. Enable developer mode and authorize USB debugging, then use Build And Run or ADB. Quest Link editor streaming requires Windows. This is an immersive app with its own mixed-reality UI, not a system-wide overlay on other apps.
 
@@ -197,9 +204,15 @@ Remote compute must have explicit access/cost authorization. The repository requ
 
 ### 7.1 Body/motion reconstruction
 
-**First candidate: GVHMR with its fitted SMPL-family output.** Run one real short clip through the released workflow on compatible NVIDIA compute before training or polishing UI. Record code revision, dependency versions, assets, device/GPU, memory use and duration.
+**Selected prototype: GVHMR with its fitted SMPL-X output.** A public WHAM derivative
+completed the pinned workflow on an RTX 3070: 242 frames, 10,475 vertices and 22
+joints, with 58.623 seconds local CLI elapsed. `processing/reconstruction/GPU_SETUP.md`
+retains exact provenance, assets and limitations. This is not a fresh Quest capture,
+visual alignment proof or whole-path timing result. The strict service integration
+and Unity exporter/importer exist; current-schema GPU and device acceptance remain
+required.
 
-The inspected release specifies Python 3.10, PyTorch 2.3.0/CUDA 12.1 and a Linux x86-64 PyTorch3D dependency. Treat these as upstream starting requirements, not a verified local environment. It requires registered SMPL and SMPL-X assets plus pretrained checkpoints. Start with pretrained inference; retraining the body estimator is outside this demo. Do not assume it runs unchanged on an Apple GPU or that source-code availability grants rights to every weight/exported asset.
+The inspected release specifies Python 3.10, PyTorch 2.3.0/CUDA 12.1 and a Linux x86-64 PyTorch3D dependency. The separate Arch model image has verified imports, CUDA execution and the public-video inference above; these are not Mac service requirements. It requires registered SMPL and SMPL-X assets plus pretrained checkpoints. Start with pretrained inference; retraining the body estimator is outside this demo. Do not assume it runs unchanged on an Apple GPU or that source-code availability grants rights to every weight/exported asset.
 
 **Timing trap:** the inspected demo re-encodes inputs at a fixed 30 FPS. Preserve original Quest presentation timestamps. Either explicitly resample inference input to 30 FPS with a source-frame/time mapping, or adapt the pipeline to retain supported timing. Never report `frame_index / 30` as observed timing unless the input was truly mapped that way.
 
@@ -232,7 +245,7 @@ Begin with one observable, sufficiently represented error category per exercise.
 
 If only clip-level annotations are available for a category, do not invent frame-level onset/offset ground truth. If predictions are window-based, retain their actual window/source times. A model score is not automatically a calibrated probability of correctness.
 
-The precise baseline and category list are gated on data inspection. The required behaviour is genuine exercise-specific findings with evidence. A scripted label or random score cannot satisfy it. Do not label a fitted spine animation as measured vertebral pathology.
+The candidate implementation in `processing/analysis/exercises/` provides ELK Error1 classifier foundations, but no authorized-data training and held-out evaluation establish a Quest method. RTK remains unsupported. The service therefore returns unavailable exercise assessment and no fabricated findings. The precise baseline and supported category list remain gated on data inspection. The required behaviour is genuine exercise-specific findings with evidence. A scripted label or random score cannot satisfy it. Do not label a fitted spine animation as measured vertebral pathology.
 
 ### 7.3 Foot analysis
 
@@ -240,7 +253,7 @@ Select a method whose documented input conditions and output match what we can c
 
 For the chosen method, record the exact output, required views, units/calibration, reference comparison and known failure conditions. Test it against appropriate reference measurements or labels. A static standing result stays labelled standing; it is not a statement about arch behaviour during walking or a torso exercise.
 
-If a usable method cannot be established, mark the automated foot feature incomplete and explain the blocker. Preserve its capture/evidence workflow, but do not count that fallback as completed analysis or silently remove the requirement.
+`processing/analysis/foot/` currently computes geometry from manual anatomical annotations. It has no automated landmark extraction or reference validation. The service and Quest expose this incomplete status. If a usable method cannot be established, mark the automated foot feature incomplete and explain the blocker. Preserve its capture/evidence workflow, but do not count that fallback as completed analysis or silently remove the requirement.
 
 ### 7.4 Findings and feedback
 
@@ -265,6 +278,14 @@ Operate on original camera footage before pose fitting or smoothing. A smooth sk
 Flow: select finding or recorded region → Magnify motion → original/amplified comparison → Back to analysis. A suitable region can open the microscope even when no automated finding exists. Keep both views at the same source interval. Clearly label amplification and retain its settings and method version.
 
 Use a compatible existing motion-magnification implementation; the MIT work is the reference principle, not proof that this headset capture will work. Require a sufficiently steady segment and check camera-motion compensation. Amplify a stationary/background reference as a negative control: if global shake dominates, return insufficient capture.
+
+The current `processing/microscope.py` implements one coarse spatial band with
+0.5–3 Hz temporal filtering and modest gain, using bounded original-frame decoding.
+It produces a matched original/amplified pair only after timing, background,
+foreground-motion and noise checks. Quest can add a dedicated steady-hold take
+without replacing the primary replay source. The inspected public clip was
+rejected for inadequate background coverage; positive real Quest usefulness is
+still unverified. The optional `microscope` Python extra is required.
 
 Magnification supports visual inspection. Compute numerical movement values from unamplified evidence. The microscope does not alter the stored skeleton, findings or body animation. A panel showing enlarged video without useful temporal amplification is not completion of this feature.
 
@@ -308,11 +329,21 @@ Freeze these sidecar field names before separate capture/processing work starts:
 | `image` | Positive integer `width_px`, `height_px`; `rotation_degrees` in 0/90/180/270; boolean `mirrored`. |
 | `camera` | `id`, `calibration_status` (calibrated/estimated/unavailable), optional `intrinsics` (`fx`, `fy`, `cx`, `cy` in pixels), `distortion_model` and `distortion_coefficients`; document any crop. |
 | `clock` | `id` identifies the source monotonic/PTS clock; `unit` is `nanoseconds`; `origin_pts_ns` is a decimal string. |
+| `media` | Optional explicit encoded-clock binding: `binding: indexed_presentation_time_us` and `presentation_time_us`, an ordered array of canonical decimal strings, one per original frame. |
 | `frames` | Ordered array of nonnegative unique integer `frame_id`, decimal-string `pts_ns`, boolean `image_valid`, and optional `camera_pose`. |
 | `camera_pose` | When supplied: `position_m` XYZ, `rotation_xyzw` quaternion, `coordinate_system`, decimal-string `pose_time_ns`, `tracking_valid` and `alignment_method`. The adapter documents the relation to image time. |
 | `capture` | `view`, `condition`, `side` matching the take; boolean `interrupted` and any explicit gap intervals. |
 
 If calibration or poses are unavailable, record that state and omit the unavailable numbers. Validate intrinsics as finite with positive focal lengths and require monotonic source times. Original frames may be rejected downstream without renumbering them. After inference resampling, retain a separate map to the original frames/times; a resampled frame ID never replaces a source ID.
+
+The capture adapter verifies each encoder-output timestamp against the submitted
+source image, then reads the final mux timestamps into `media`. Both clocks stay
+separate: never replace original camera PTS with the encoded clock. The decoder
+compares every nonnegative microsecond timestamp (truncated using Android
+MediaExtractor's integer conversion) against this strictly increasing
+mapping, rejecting missing, extra, changed or reordered frames. An explicit
+mapping cannot also apply a fixed clock offset. Legacy inputs without `media`
+require a separately verified decoder-to-source nanosecond offset.
 
 The executable sidecar schema is `processing/schemas/capture_sidecar.schema.json`.
 Sidecar and replay-manifest JSON documents are each limited to 16 MiB before
@@ -324,7 +355,7 @@ that the Quest camera adapter has been verified.
 
 ### 8.3 Replay package, version 1
 
-Use one fixed-topology surface with aligned vertex/joint frames. The following is a proposed exporter/importer contract to prove in milestone M1; do not build two animation formats at once.
+Use one fixed-topology surface with aligned vertex/joint frames. The exporter and Unity importer implement the following contract. Their automated geometry/timing checks do not complete milestone M1 without a fresh recording and on-device inspection; do not build two animation formats at once.
 
 | Artifact | Encoding |
 |---|---|
@@ -381,7 +412,7 @@ A display parent transform handles placement/rotation/scale. Keep it separate fr
 
 ## 9. Service API, persistence and failures
 
-The authoritative proposed HTTP schemas are in `openapi.yaml`. Validate them in both server tests and a client fixture before implementing independent assumptions.
+The authoritative implemented HTTP schemas are in `openapi.yaml`. Validate them in both server tests and a client fixture before implementing independent assumptions.
 
 | Operation | Purpose |
 |---|---|
@@ -390,15 +421,14 @@ The authoritative proposed HTTP schemas are in `openapi.yaml`. Validate them in 
 | `GET /v1/jobs/{job_id}/result` | Fetch completed result manifest. |
 | `GET /v1/jobs/{job_id}/artifacts/{artifact_id}` | Fetch an artifact from that job's allowlisted inventory. |
 
-Proposed states are pending, running, succeeded and failed. UI stages map to preparing recording, estimating movement, analysing test and preparing replay. Poll according to the server's `Retry-After` header, initially two seconds, and back off on network/server failures. No invented percentages.
+Job states are pending, running, succeeded and failed. UI stages map to preparing recording, estimating movement, analysing test and preparing replay. Poll according to the server's `Retry-After` header, initially two seconds, and back off on network/server failures. No invented percentages.
 
 Use a UUID idempotency key for submission. Retrying the same submission must return the same job when its content matches. Reusing a key with different content returns a conflict. A deliberate new processing attempt gets a new key/result version while keeping original media and session identity.
 
 The first service implementation uses provisional `protocol_id` values `elk`,
 `rtk` and `barefoot`, matching `test_type`, with `protocol_version: "1.0"`.
 These identify the capture contract, not evaluated clinical protocols or
-required-view decisions. Revise them with actual protocol evidence when the
-model/capture work reaches `main`. Recording duration must cover the last
+required-view decisions. Revise them only with actual protocol/model evidence. Recording duration must cover the last
 source PTS offset and may include its final frame's presentation duration.
 
 Persist input and job metadata before acknowledging submission. Use atomic file replacement for state/results. Mark interrupted in-flight jobs failed with `WORKER_INTERRUPTED` after a service restart; do not leave them running forever or claim success for partial output. A single active processing slot is enough; busy submissions receive 429 and retry guidance.
@@ -413,9 +443,23 @@ for other listeners. Default private storage is `var/processing` with an 8 GiB
 budget, one upload-validation slot and one processing slot. Receive time is
 bounded to 120 seconds. Reserve space before acceptance; preserve accepted
 evidence when full. Result output is capped at 1 GiB and result JSON at 16 MiB.
-MP4 signature validation is implemented; bounded decoding and real frame/PTS
-checks remain gated on inference integration. Current normal processing ends
-with `PROCESSING_FAILED` explaining this missing capability.
+MP4 signature validation occurs at upload. Configured inference then verifies
+bounded decoding and exact per-frame media timestamps before model execution.
+`processing/pipeline.py` runs an operator-configured local CLI, exports the native
+output through the shared contract and publishes only validated artifacts. The
+unconfigured default retains accepted recordings and returns `PROCESSING_FAILED`;
+there is no fixture fallback. Barefoot results expose unavailable automated
+assessment without inventing a full-body replay.
+
+Configuration is explicit: `PROCESSING_INFERENCE_COMMAND` is JSON argv,
+`PROCESSING_INFERENCE_CWD` is an installed model directory, and the defaults are
+900 seconds and 768 MiB inference scratch. No SSH transport is embedded. Both
+`PROCESSING_ALLOW_ESTIMATED_INTRINSICS` and `PROCESSING_ALLOW_UNVERIFIED_PINHOLE`
+default false. The latter permits only unknown distortion with empty coefficients
+as a recorded pinhole approximation, labels processing intrinsics estimated, and
+preserves the original sidecar. It does not establish lens calibration, physical
+scale or alignment. Quest SDK intrinsics currently have this unknown-distortion
+limitation. Setup commands are in the root README.
 
 Internal worker output uses `replay_manifest.json` plus its three fixed binary
 filenames for replay. Other artifact files use their canonical lowercase UUID
@@ -471,18 +515,19 @@ docs/
   SPEC.md
   HANDOFF.md
   openapi.yaml
-quest/                    # Unity project, created after environment check
+quest/                    # Unity project and native Meta integration
   Assets/Physio/
     Capture/
     Replay/
-    Sessions/
-    UI/
+    Workflow/
+    Viewer/
+    Editor/
 processing/               # Python service, model adapters and exporters
   analysis/
 tests/                    # Small fixtures and processing/contract checks
 ```
 
-These future directories are suggestions, not existing code. Keep modules small and concrete. Do not generate empty scaffolding for every heading. Use the Unity test layout appropriate to the created project.
+The current implementation follows these concrete areas; see the Quest guide for exact files. Keep modules small and concrete. Do not generate empty scaffolding for every heading. Use the Unity test layout appropriate to the created project.
 
 ### M0 — verify inputs and tooling
 
@@ -538,7 +583,7 @@ Before implementing a new binary parser or time transform, write focused tests f
 
 At specification time, approximately 21.5 hours remained. Refresh this figure in future sessions; never assume another full day. Initial allocation: ~2 hours M0/M1 compatibility proof; ~8 hours first complete test and model work; ~6 hours remaining integrations; ~4 hours rehearsal/fixes; remaining time for presentation. This is a budget, not evidence of feasibility.
 
-Workstreams are Quest capture/UI, model/data/analysis, and integration/replay/testing. Team size and expertise have not been established. One person can cover multiple streams; do not invent owners. Record actual assignments before parallel changes. Remove optional voice/appearance polish before reducing a required feature, and expose any delivery shortfall.
+Workstreams are Quest capture/UI, model/data/analysis, and integration/replay/testing. Recorded owners are Bader (backend), Mohammad (ML), Hamza (Quest) and Mustafa (design). Bader is covering the current integrated Quest work; preserve each owner's branch and changes. Remove optional voice/appearance polish before reducing a required feature, and expose any delivery shortfall.
 
 ## 12. Verification and acceptance matrix
 
@@ -613,4 +658,4 @@ These are implementation starting points. Recheck the versions used and record e
 - [MIT motion magnification](https://people.csail.mit.edu/mrub/evm/).
 - [Phase-based motion magnification](https://people.csail.mit.edu/nwadhwa/phase-video/): a candidate method to evaluate under the actual capture conditions.
 
-Documentation and selected source were inspected during planning. No complete model-to-Quest run, trained classifier, automated foot assessment, useful Quest motion-magnification result or clinical validation is claimed yet.
+Documentation and selected source informed the implementation. The public-video GPU run and automated component checks are recorded in the handoff. No fresh Quest capture-to-replay run, evaluated ELK/RTK classifier, automated foot assessment, useful Quest motion-magnification result or clinical validation is claimed yet.

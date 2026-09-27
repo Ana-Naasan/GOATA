@@ -1,4 +1,4 @@
-"""Authenticated local processing API; real inference is deliberately absent."""
+"""Authenticated local processing API with an explicitly configured GPU adapter."""
 
 import asyncio
 import copy
@@ -19,6 +19,7 @@ from starlette.formparsers import MultiPartException, MultiPartParser
 from starlette.responses import FileResponse, JSONResponse
 
 from processing.errors import ServiceError
+from processing.pipeline import Pipeline, PipelineError
 from processing.publication import validate_result
 from processing.settings import Settings
 from processing.storage import Store, private_directory
@@ -112,21 +113,19 @@ def _process(store, processor, job_id):
     output = store.jobs_dir / job_id / "output.tmp"
     try:
         record = store.start(job_id)
-        if processor is None:
-            store.fail(job_id, "PROCESSING_FAILED", "Real inference is not integrated; the original capture has been retained.")
-            return
         private_directory(output)
         input_dir = store.jobs_dir / job_id / "input"
         context = {**record["job"], "input_digest": record["input_digest"]}
         result = processor(input_dir, output, copy.deepcopy(record["manifest"]), context, lambda stage: store.stage(job_id, stage))
         artifact_files = validate_result(result, record, input_dir, output, store.settings.limits)
         store.publish(job_id, result, artifact_files)
-    except Exception:  # noqa: BLE001 - worker boundary must persist every failure, without leaking exception text.
+    except Exception as exc:  # noqa: BLE001 - worker boundary persists failure without exposing arbitrary exception text.
         # Log only an opaque job reference; exceptions may contain source paths,
         # media metadata or credentials supplied by a future model adapter.
         LOG.error("Processing failed for job %s", job_id)
         try:
-            store.fail(job_id, "PROCESSING_FAILED", "Processing failed; the original capture has been retained.")
+            message = str(exc) if isinstance(exc, PipelineError) else "Processing failed; the original capture has been retained."
+            store.fail(job_id, "PROCESSING_FAILED", message)
         except Exception:  # noqa: BLE001 - report storage failure while preserving its pending/running record.
             LOG.error("Could not persist processing failure for job %s", job_id)
     finally:
@@ -192,8 +191,9 @@ async def _receive_upload(request, staging, limits):
 
 
 def create_app(settings: Settings | None = None, processor=None):
-    """Processor injection is for tests until an approved real adapter lands."""
+    """Use the configured local pipeline; retain injection for boundary tests."""
     settings = settings or Settings.from_env()
+    processor = processor if processor is not None else Pipeline(settings)
     store = Store(settings)
     upload_slot = threading.Lock()
 
