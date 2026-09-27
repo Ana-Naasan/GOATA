@@ -1,7 +1,7 @@
 # Codex session handoff
 
 **Last updated:** September 27, 2026. Walking review and source-linked estimated
-insights are implemented on `codex/walking-insights` in
+insights are implemented at source commit `bbf4e26` on `codex/walking-insights` in
 `/Users/baderasadi/.codex/worktrees/hamza-quest/HTH`, based on `main` at `3bad1a7`
 ([PR #11](https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp/pull/11), including
 Mohammad's PR #10). M1 and clinical evaluation remain incomplete: no fresh Quest
