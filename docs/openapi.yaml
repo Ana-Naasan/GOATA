@@ -3,9 +3,9 @@ info:
   title: Physio Motion Replay processing service
   version: 0.1.0
   description: |
-    Local transfer and job mechanics are implemented. Real inference is not yet
-    integrated; accepted captures currently fail with PROCESSING_FAILED while
-    preserving their original files. No validated clinical model is claimed.
+    Local transfer and job mechanics support explicitly configured local inference.
+    An unconfigured pipeline fails with PROCESSING_FAILED while preserving the
+    original files. No validated clinical model is claimed.
     The Quest app owns patient profiles and history. This service processes one
     immutable capture bundle at a time and returns versioned artifacts. Display
     names are not uploaded. A successful job means its result was saved, not that
@@ -46,6 +46,44 @@ tags:
   - name: jobs
     description: Capture processing and immutable results.
 paths:
+  /v1/ready:
+    get:
+      tags: [jobs]
+      operationId: getReadiness
+      summary: Check whether the resident inference worker is warm and live
+      description: |
+        Requires the same bearer token as jobs and artifacts. Returns only bounded
+        state, never model diagnostics or paths. Resident readiness requires a
+        successful full warmup. Busy means warm, not available processing capacity.
+        This check does not wait for a running job or call a model.
+        Legacy subprocess mode and an unconfigured service are never reported warm;
+        their existing submission behavior is unchanged. Resident mode rejects new
+        submissions until warm, but persisted idempotency replays still work.
+        Initial warmup failure stays unavailable until service restart. After a
+        warmed worker fails, one fresh worker may perform full warmup for recovery;
+        no further automatic restart or cold fallback is attempted. Warmup checks
+        storage capacity before launch; resident mode always reserves a full
+        inference workspace in addition to upload and active-job allocations.
+        A cleanup failure keeps readiness false, retains temporary output and
+        forbids recovery. The direct child inherits the service's exclusive store
+        lock, so a surviving orphan blocks restart until its process group stops.
+        Only after acquiring that lock may startup reconcile abandoned scratch.
+      responses:
+        '200':
+          description: Warm, live resident worker; capacity is checked at submission.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Readiness'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '503':
+          description: Not warm or not live; persisted jobs and downloads remain accessible.
+          headers:
+            Retry-After:
+              schema: {type: integer, const: 2}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Readiness'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /v1/jobs:
     post:
       tags: [jobs]
@@ -67,7 +105,10 @@ paths:
         same contents returns the original Job, even if it is now terminal.
         The same key with different contents returns 409. Reprocessing requires
         a new key and creates a new job/result; it never overwrites a saved result.
-        Check an existing idempotency record before rejecting for worker capacity.
+        Check an existing idempotency record before rejecting for worker capacity
+        or resident readiness. A new resident-mode job returns 503 NOT_READY until
+        the configured child has completed full warmup. An occupied processing
+        slot retains 429 precedence over readiness for distinct submissions.
       parameters:
         - name: Idempotency-Key
           in: header
@@ -129,6 +170,14 @@ paths:
           headers:
             Retry-After:
               schema: {type: integer, minimum: 1}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+        '503':
+          description: NOT_READY; configured resident inference is not warm and live. No new job was accepted.
+          headers:
+            Retry-After:
+              schema: {type: integer, const: 2}
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorEnvelope'}
@@ -256,6 +305,25 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/ErrorEnvelope'}
   schemas:
+    Readiness:
+      type: object
+      additionalProperties: false
+      required: [ready, state]
+      properties:
+        ready: {type: boolean}
+        state:
+          type: string
+          enum: [warming, ready, busy, failed, stopped, unconfigured, legacy_cold]
+      allOf:
+        - if:
+            properties:
+              ready: {const: true}
+          then:
+            properties:
+              state: {enum: [ready, busy]}
+          else:
+            properties:
+              state: {enum: [warming, failed, stopped, unconfigured, legacy_cold]}
     Sha256:
       type: string
       pattern: '^[a-f0-9]{64}$'

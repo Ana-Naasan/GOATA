@@ -40,16 +40,20 @@ class Settings:
     inference_workspace_bytes: int = 768 * 1024**2
     allow_estimated_intrinsics: bool = False
     allow_unverified_pinhole: bool = False
+    resident_command: tuple[str, ...] = ()
 
     def __post_init__(self):
         if len(self.token) < 32 or not all(33 <= ord(char) <= 126 for char in self.token):
             raise ValueError("PROCESSING_TOKEN must contain at least 32 printable ASCII characters without spaces")
-        if (type(self.inference_command) is not tuple or len(self.inference_command) > 64
-                or any(type(item) is not str or not item or "\0" in item or len(item) > 4096 for item in self.inference_command)):
-            raise ValueError("Inference command must be a bounded tuple of nonempty arguments")
+        for command in (self.inference_command, self.resident_command):
+            if (type(command) is not tuple or len(command) > 64
+                    or any(type(item) is not str or not item or "\0" in item or len(item) > 4096 for item in command)):
+                raise ValueError("Inference command must be a bounded tuple of nonempty arguments")
+        if self.inference_command and self.resident_command:
+            raise ValueError("Resident and legacy inference commands are mutually exclusive")
         if self.inference_cwd is not None and (not self.inference_cwd.is_absolute() or not self.inference_cwd.is_dir()):
             raise ValueError("Inference working directory must be an existing absolute directory")
-        if self.inference_command and self.inference_cwd is None:
+        if (self.inference_command or self.resident_command) and self.inference_cwd is None:
             raise ValueError("Configured inference requires PROCESSING_INFERENCE_CWD")
         if (type(self.inference_timeout_seconds) not in (int, float)
                 or not math.isfinite(self.inference_timeout_seconds) or self.inference_timeout_seconds <= 0):
@@ -66,6 +70,9 @@ class Settings:
         command = json.loads(os.environ.get("PROCESSING_INFERENCE_COMMAND", "[]"))
         if type(command) is not list:
             raise ValueError("PROCESSING_INFERENCE_COMMAND must be a JSON array of arguments")
+        resident = json.loads(os.environ.get("PROCESSING_RESIDENT_COMMAND", "[]"))
+        if type(resident) is not list:
+            raise ValueError("PROCESSING_RESIDENT_COMMAND must be a JSON array of arguments")
         cwd = os.environ.get("PROCESSING_INFERENCE_CWD")
         estimated = os.environ.get("PROCESSING_ALLOW_ESTIMATED_INTRINSICS", "false")
         if estimated not in {"true", "false"}:
@@ -75,6 +82,7 @@ class Settings:
             raise ValueError("PROCESSING_ALLOW_UNVERIFIED_PINHOLE must be true or false")
         return cls(Path(os.environ.get("PROCESSING_DATA_DIR", "var/processing")),
                    os.environ.get("PROCESSING_TOKEN", ""), inference_command=tuple(command),
+                   resident_command=tuple(resident),
                    inference_cwd=Path(cwd) if cwd else None,
                    inference_timeout_seconds=float(os.environ.get("PROCESSING_INFERENCE_TIMEOUT_SECONDS", "900")),
                    inference_workspace_bytes=int(os.environ.get("PROCESSING_INFERENCE_WORKSPACE_BYTES", str(768 * 1024**2))),

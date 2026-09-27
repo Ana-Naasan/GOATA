@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from fractions import Fraction
 from pathlib import Path
+from unittest.mock import patch
 
 from test_runtime import sidecar
 
@@ -37,7 +38,10 @@ class MediaRuntimeTests(unittest.TestCase):
             doc = sidecar()
             doc['image'].update(width_px=64, height_px=48)
             plan = runtime.plan_input(doc)
-            runtime.prepare_video(original, prepared, plan, 1000000000)
+            with patch.object(runtime, 'video_reader', wraps=runtime.video_reader) as reader:
+                runtime.prepare_video(original, prepared, plan, 1000000000)
+            self.assertEqual([call.args for call in reader.call_args_list],
+                             [(original,), (original,), (prepared,)])
             self.assertEqual(plan['decoder_binding']['offset_ns'], '1000000000')
             with av.open(str(prepared)) as container:
                 frames = list(container.decode(video=0))

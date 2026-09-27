@@ -1,6 +1,7 @@
 """Pipeline integration checks use declared synthetic native geometry only."""
 
 import json
+import os
 import shutil
 import sys
 from dataclasses import replace
@@ -140,7 +141,13 @@ def test_default_service_pipeline_publishes_a_verified_native_result(tmp_path, m
 
     capture, inputs, native, _, _, _ = native_fixture(tmp_path)
     archive = zip_members([(path.name, path.read_bytes()) for path in (inputs / "files").iterdir()])
-    monkeypatch.setattr("processing.pipeline.run_inference", lambda v, s, d, c: shutil.copytree(native, d))
+
+    def inference(video, sidecar, destination, config, *, pass_fds):
+        assert len(pass_fds) == 1
+        assert os.fstat(pass_fds[0]).st_ino == (config.data_dir / ".worker.lock").stat().st_ino
+        shutil.copytree(native, destination)
+
+    monkeypatch.setattr("processing.pipeline.run_inference", inference)
     monkeypatch.setattr(Pipeline, "_microscopes", lambda *_: no_microscope())
     config = Settings(tmp_path / "store", TOKEN)
     with TestClient(create_app(config)) as client:

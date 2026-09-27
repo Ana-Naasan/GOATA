@@ -5,6 +5,7 @@ import fcntl
 import json
 import os
 import shutil
+import stat
 import tempfile
 import threading
 from datetime import UTC, datetime
@@ -13,6 +14,7 @@ from uuid import UUID, uuid4
 
 from processing.api_contract import validate_schema
 from processing.errors import ServiceError
+from processing.resident import remove_workspace
 from processing.settings import Settings
 
 ACTIVE = {"pending", "running"}
@@ -94,6 +96,10 @@ class Store:
             private_directory(self.staging_dir)
             self.records = {}
             self.idempotency = {}
+            # The configured inference child inherits this flock. Exclusive ownership
+            # proves a previous cooperative worker no longer holds the store.
+            # Never reconcile scratch (including job output) before this lease.
+            remove_workspace(self.root / "resident.tmp")
             self._recover()
         except BaseException:
             self.close()
@@ -141,25 +147,74 @@ class Store:
     def ensure_capacity(self, reserve):
         # ponytail: O(n) disk accounting; use a persisted byte counter if saved
         # job volume makes upload admission slow. There is one validation slot.
-        used = sum(path.stat().st_size for path in self.root.rglob("*") if path.is_file())
+        # Keep a full warmup workspace in reserve even while upload validation,
+        # inference and export allocate. Conservatively double-count live scratch.
+        if self.settings.resident_command:
+            reserve += self.settings.inference_workspace_bytes
+        used = 0
+
+        def walk_error(error):
+            if not isinstance(error, FileNotFoundError):
+                raise error
+
+        # Descriptor-relative, no-follow accounting: warmup can remove files at
+        # any time; a replacement symlink must never account an outside target.
+        for _, directories, files, descriptor in os.fwalk(self.root, follow_symlinks=False, onerror=walk_error):
+            for name in directories + files:
+                try:
+                    details = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+                except FileNotFoundError:
+                    continue
+                if stat.S_ISLNK(details.st_mode):
+                    raise RuntimeError("Processing storage must not use symbolic links.")
+                if stat.S_ISREG(details.st_mode):
+                    used += details.st_size
+                elif not stat.S_ISDIR(details.st_mode):
+                    raise RuntimeError("Processing storage contains an unsupported file.")
         if used + reserve > self.settings.limits.max_storage_bytes:
             raise ServiceError("CAPACITY_EXCEEDED", "Storage capacity is exhausted; retain the capture and retry later.", 429, True)
         if shutil.disk_usage(self.root).free < reserve:
             raise ServiceError("CAPACITY_EXCEEDED", "Available disk space is insufficient.", 429, True)
 
+    def _upload_reserve(self):
+        limits = self.settings.limits
+        return (max(2 * limits.max_zip_bytes, limits.max_zip_bytes + limits.max_expanded_bytes)
+                + self.record_limit + limits.max_manifest_bytes)
+
+    def _job_reserve(self):
+        limits = self.settings.limits
+        # Native output can overlap export and a recovery warmup. It cannot
+        # borrow the separate fixed warmup headroom in ensure_capacity().
+        native = self.settings.inference_workspace_bytes if self.settings.resident_command else 0
+        return limits.max_output_bytes + limits.max_metadata_bytes + self.record_limit + native
+
+    def worker_fds(self):
+        """Keep restart exclusion in a direct child if its parent disappears."""
+        with self.lock:
+            if self._lock_stream is None:
+                raise RuntimeError("Inference launch requires exclusive store ownership.")
+            return (self._lock_stream.fileno(),)
+
+    def resident_fds(self):
+        """Check warmup plus overlapping allocations under the launch/store lock."""
+        with self.lock:
+            descriptors = self.worker_fds()
+            reserve = self._upload_reserve() if any(self.staging_dir.iterdir()) else 0
+            if any(record["job"]["status"] in ACTIVE for record in self.records.values()):
+                reserve += self._job_reserve()
+            self.ensure_capacity(reserve)
+            return descriptors
+
     def staging(self):
         with self.lock:
-            limits = self.settings.limits
-            # Budget the simultaneous ZIP, extracted files, metadata and output
-            # of the worker already running while this request is validated.
-            reserve = (max(2 * limits.max_zip_bytes, limits.max_zip_bytes + limits.max_expanded_bytes)
-                       + self.record_limit + limits.max_manifest_bytes)
+            # Budget simultaneous ZIP/extraction and the already-running worker.
+            reserve = self._upload_reserve()
             if any(record["job"]["status"] in ACTIVE for record in self.records.values()):
-                reserve += limits.max_output_bytes + limits.max_metadata_bytes + self.record_limit
+                reserve += self._job_reserve()
             self.ensure_capacity(reserve)
             return Path(tempfile.mkdtemp(prefix="upload-", dir=self.staging_dir))
 
-    def accept(self, staging, manifest, digest, key):
+    def accept(self, staging, manifest, digest, key, admission=None):
         with self.lock:
             previous_id = self.idempotency.get(key)
             if previous_id is not None:
@@ -169,7 +224,9 @@ class Store:
                 return copy.deepcopy(record), False
             if any(record["job"]["status"] in ACTIVE for record in self.records.values()):
                 raise ServiceError("CAPACITY_EXCEEDED", "Another capture is processing; retry after it finishes.", 429, True)
-            self.ensure_capacity(self.settings.limits.max_output_bytes + self.settings.limits.max_metadata_bytes + self.record_limit)
+            if admission is not None:
+                admission()
+            self.ensure_capacity(self._job_reserve())
             job_id = str(uuid4())
             timestamp = now()
             job = {"job_id": job_id, "session_id": manifest["session_id"],

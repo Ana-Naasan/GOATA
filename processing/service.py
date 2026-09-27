@@ -19,8 +19,9 @@ from starlette.formparsers import MultiPartException, MultiPartParser
 from starlette.responses import FileResponse, JSONResponse
 
 from processing.errors import ServiceError
-from processing.pipeline import Pipeline, PipelineError
+from processing.pipeline import Pipeline, PipelineCleanupError, PipelineError
 from processing.publication import validate_result
+from processing.resident import Resident
 from processing.settings import Settings
 from processing.storage import Store, private_directory
 from processing.uploads import validate_upload
@@ -30,7 +31,7 @@ LOG = logging.getLogger(__name__)
 
 def error_response(error, request_id):
     headers = {"WWW-Authenticate": "Bearer"} if error.status_code == 401 else {}
-    if error.status_code == 429:
+    if error.status_code in {429, 503}:
         headers["Retry-After"] = "2"
     return JSONResponse({"error": error.detail(), "request_id": request_id}, error.status_code, headers=headers)
 
@@ -111,6 +112,7 @@ async def capture_form(request, limits):
 
 def _process(store, processor, job_id):
     output = store.jobs_dir / job_id / "output.tmp"
+    cleanup_safe = True
     try:
         record = store.start(job_id)
         private_directory(output)
@@ -123,13 +125,15 @@ def _process(store, processor, job_id):
         # Log only an opaque job reference; exceptions may contain source paths,
         # media metadata or credentials supplied by a future model adapter.
         LOG.error("Processing failed for job %s", job_id)
+        cleanup_safe = not isinstance(exc, PipelineCleanupError)
         try:
             message = str(exc) if isinstance(exc, PipelineError) else "Processing failed; the original capture has been retained."
             store.fail(job_id, "PROCESSING_FAILED", message)
         except Exception:  # noqa: BLE001 - report storage failure while preserving its pending/running record.
             LOG.error("Could not persist processing failure for job %s", job_id)
     finally:
-        shutil.rmtree(output, ignore_errors=True)
+        if cleanup_safe:
+            shutil.rmtree(output, ignore_errors=True)
 
 
 def _validate(staging, raw_manifest, limits):
@@ -193,9 +197,15 @@ async def _receive_upload(request, staging, limits):
 def create_app(settings: Settings | None = None, processor=None):
     """Use the configured local pipeline; retain injection for boundary tests."""
     settings = settings or Settings.from_env()
-    processor = processor if processor is not None else Pipeline(settings)
     store = Store(settings)
+    resident = Resident(settings, store=store) if settings.resident_command else None
+    processor = processor if processor is not None else Pipeline(settings, resident=resident, store=store)
     upload_slot = threading.Lock()
+
+    def admission():
+        if (resident is not None and not resident.snapshot()["ready"]
+                or isinstance(processor, Pipeline) and processor.cleanup_failed):
+            raise ServiceError("NOT_READY", "Resident inference is not ready; retry shortly.", 503, True)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -203,10 +213,22 @@ def create_app(settings: Settings | None = None, processor=None):
         executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="processing")
         app.state.executor = executor
         try:
+            if resident is not None:
+                resident.start()
             yield
         finally:
-            await run_in_threadpool(lambda: executor.shutdown(wait=True, cancel_futures=False))
-            store.close()
+            # Stop/reap the child first, releasing a waiting Pipeline before
+            # executor shutdown waits for its job and persists the failure.
+            try:
+                if resident is not None:
+                    await run_in_threadpool(resident.close)
+            finally:
+                try:
+                    await run_in_threadpool(lambda: executor.shutdown(wait=True, cancel_futures=False))
+                finally:
+                    # A possibly-live child retains its inherited flock even
+                    # after this parent releases its descriptor.
+                    store.close()
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.store = store
@@ -221,6 +243,13 @@ def create_app(settings: Settings | None = None, processor=None):
         code = "NOT_FOUND" if exc.status_code == 404 else "VALIDATION_ERROR"
         status = 404 if exc.status_code == 404 else 422
         return error_response(ServiceError(code, "Endpoint was not found." if status == 404 else "Invalid request.", status), request.state.request_id)
+
+    @app.get("/v1/ready")
+    async def get_ready():
+        state = (resident.snapshot() if resident is not None else
+                 {"state": "legacy_cold" if settings.inference_command else "unconfigured", "ready": False})
+        return JSONResponse(state, 200 if state["ready"] else 503,
+                            headers={} if state["ready"] else {"Retry-After": "2"})
 
     @app.post("/v1/jobs")
     async def create_job(request: Request):
@@ -237,7 +266,7 @@ def create_app(settings: Settings | None = None, processor=None):
             staging = await run_in_threadpool(store.staging)
             raw_manifest = await _receive_upload(request, staging, settings.limits)
             manifest, digest = await run_in_threadpool(_validate, staging, raw_manifest, settings.limits)
-            record, is_new = await run_in_threadpool(store.accept, staging, manifest, digest, key)
+            record, is_new = await run_in_threadpool(store.accept, staging, manifest, digest, key, admission)
             job = record["job"]
             if is_new:
                 try:
