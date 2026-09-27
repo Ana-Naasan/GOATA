@@ -17,7 +17,8 @@ public final class PhysioMp4Recorder {
         final byte[] pixels; final long pts;
         Frame(byte[] pixels, long pts) { this.pixels = pixels; this.pts = pts; }
     }
-    private final ArrayBlockingQueue<Frame> queue = new ArrayBlockingQueue<>(2);
+    // Six frames absorb 200 ms scheduling bursts at 30 fps; at most 47.5 MiB at allowed dimensions.
+    private final ArrayBlockingQueue<Frame> queue = new ArrayBlockingQueue<>(6);
     private final ArrayList<Long> submitted = new ArrayList<>();
     private final ArrayList<Long> encoded = new ArrayList<>();
     private final int width, height;
@@ -29,6 +30,7 @@ public final class PhysioMp4Recorder {
     private volatile long[] presentationTimes = new long[0];
     private long lastSubmitted = -1;
     private int accepted;
+    private volatile int queueFullRejections, queuedFramesSampleMax;
     // Encoder-thread-owned counters, emitted once on completion without capture identifiers.
     private long inputWaitNanos, conversionNanos, maxConversionNanos, drainNanos, warmupNanos;
     private int inputWaitCalls, conversionCalls, drainCalls, warmupCalls;
@@ -47,7 +49,8 @@ public final class PhysioMp4Recorder {
     public synchronized boolean submit(byte[] rgba, long presentationUs) {
         if (!ready || stopping || done || rgba == null || rgba.length != width*height*4 || presentationUs <= lastSubmitted ||
             presentationUs < 0 || presentationUs > 19966666 || accepted >= 600) return false;
-        if (!queue.offer(new Frame(rgba, presentationUs))) return false;
+        if (!queue.offer(new Frame(rgba, presentationUs))) { queueFullRejections++;return false; }
+        queuedFramesSampleMax=Math.max(queuedFramesSampleMax,queue.size());
         lastSubmitted=presentationUs; accepted++; return true;
     }
     public void finish() { stopping=true; }
@@ -99,9 +102,9 @@ public final class PhysioMp4Recorder {
             queue.clear();
             try {
                 android.util.Log.i("PhysioCapture",String.format(java.util.Locale.ROOT,
-                    "PHYSIO_NATIVE_TIMING warmup_calls=%d warmup_ms=%.3f submitted_frames=%d encoded_frames=%d conversion_calls=%d conversion_ms_total=%.3f conversion_ms_max=%.3f input_wait_calls=%d input_wait_ms_total=%.3f drain_calls=%d drain_ms_total=%.3f lifetime_ms=%.3f",
+                    "PHYSIO_NATIVE_TIMING warmup_calls=%d warmup_ms=%.3f submitted_frames=%d encoded_frames=%d conversion_calls=%d conversion_ms_total=%.3f conversion_ms_max=%.3f input_wait_calls=%d input_wait_ms_total=%.3f drain_calls=%d drain_ms_total=%.3f lifetime_ms=%.3f queue_full_rejections=%d queued_frames_sample_max=%d",
                     warmupCalls,warmupNanos/1e6,submitted.size(),encoded.size(),conversionCalls,conversionNanos/1e6,maxConversionNanos/1e6,
-                    inputWaitCalls,inputWaitNanos/1e6,drainCalls,drainNanos/1e6,(System.nanoTime()-started)/1e6));
+                    inputWaitCalls,inputWaitNanos/1e6,drainCalls,drainNanos/1e6,(System.nanoTime()-started)/1e6,queueFullRejections,queuedFramesSampleMax));
             } finally { done=true; }
         }
     }

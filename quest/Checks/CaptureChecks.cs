@@ -35,6 +35,8 @@ static class CaptureChecks
             Check(CaptureBundle.DurationComplete(0,14_966_667_000,15_000_000_000));
             var frames = new[] { new CapturedFrame(0, 1790472000123456000), new CapturedFrame(2, 1790472000156789000) };
             var metadata = CaptureBundle.Sidecar(take, 640, 480, frames, new long[] {0,33333}, "front", "seated", "not_applicable", false, 500, 510, 320, 240, new long[] {1790472000140000000});
+            Check((string)metadata["adapter"]["version"] == "85.0.0/2");
+            Check((int)metadata["image"]["rotation_degrees"] == 0 && !(bool)metadata["image"]["mirrored"]);
             Check((string)metadata["frames"][1]["pts_ns"] == "1790472000156789000");
             Check((int)metadata["frames"][1]["frame_id"] == 2);
             Check(metadata["capture"]["gaps"].Count() == 1);

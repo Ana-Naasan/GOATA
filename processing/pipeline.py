@@ -51,11 +51,20 @@ def _stop(process):
     process.wait()
 
 
+def _validate_capture_encoding(metadata):
+    if metadata.get("adapter") == {
+        "name": "Meta.MRUK.PassthroughCameraAccess/HTH.AndroidMediaCodec", "version": "85.0.0/1"
+    }:
+        raise PipelineError("This recording was saved upside down by an earlier app version. "
+                            "Update the app and record a new test. The original recordings are retained.")
+
+
 def run_inference(video, sidecar, destination, settings):
     """Run an operator-configured local CLI, never a shell or remote transport."""
     if not settings.inference_command:
         raise PipelineError("Real inference is not configured; the original capture has been retained.")
     metadata = read_json_file(sidecar, max_bytes=settings.limits.max_metadata_bytes)
+    _validate_capture_encoding(metadata)
     media = metadata.get("media")
     if media is None:
         raise PipelineError("Capture has no verified media timestamp mapping; inference cannot bind source evidence.")
@@ -146,6 +155,8 @@ class Pipeline:
         sources = {take["take_id"]: (take, read_json_file(inputs / "files" / take["frame_metadata"]["member"],
                                                         max_bytes=self.settings.limits.max_metadata_bytes))
                    for take in capture["takes"]}
+        for _take, sidecar in sources.values():
+            _validate_capture_encoding(sidecar)
         result_id, settings_id = str(uuid4()), str(uuid4())
         native = output / "native.tmp"
         replay_take = capture.get("replay_take_id")

@@ -97,7 +97,7 @@ namespace Physio.Capture
             }
             return new JObject {
                 ["schema_version"]="1.0",["take_id"]=take,
-                ["adapter"]=new JObject{["name"]="Meta.MRUK.PassthroughCameraAccess/HTH.AndroidMediaCodec",["version"]="85.0.0/1"},
+                ["adapter"]=new JObject{["name"]="Meta.MRUK.PassthroughCameraAccess/HTH.AndroidMediaCodec",["version"]="85.0.0/2"},
                 ["image"]=new JObject{["width_px"]=width,["height_px"]=height,["rotation_degrees"]=0,["mirrored"]=false},
                 ["camera"]=new JObject{["id"]="quest3-left",["calibration_status"]="calibrated",
                     ["intrinsics"]=new JObject{["fx"]=fx,["fy"]=fy,["cx"]=cx,["cy"]=cy},

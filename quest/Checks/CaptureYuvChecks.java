@@ -31,6 +31,16 @@ final class CaptureYuvChecks {
       PhysioYuv420.fill(rgba,w,h,flip,bulk.planes,bulk.row,bulk.pixel,new byte[w*2]);
       scalar.unchanged();bulk.unchanged();for(int i=0;i<scalar.backing.length;i++)if(!Arrays.equals(bytes(scalar.backing[i]),bytes(bulk.backing[i])))throw new AssertionError("mismatch layout="+layout+" yp="+yp+" direct="+direct+" flip="+flip);checks++;
     }
+    // Real camera dimensions exercise row/block indexing beyond the small randomized layouts.
+    for(boolean flip:new boolean[]{false,true})for(int layout:new int[]{2,3}) {
+      int w=1280,h=960;byte[] rgba=new byte[w*h*4];random.nextBytes(rgba);
+      Layout scalar=new Layout(w,h,true,layout,1,16,3),bulk=new Layout(w,h,true,layout,1,16,3);
+      fillScalarReference(rgba,w,h,flip,scalar.planes,scalar.row,scalar.pixel);
+      PhysioYuv420.fill(rgba,w,h,flip,bulk.planes,bulk.row,bulk.pixel,new byte[w*2]);
+      scalar.unchanged();bulk.unchanged();
+      for(int i=0;i<scalar.backing.length;i++)if(!Arrays.equals(bytes(scalar.backing[i]),bytes(bulk.backing[i])))throw new AssertionError("full-resolution mismatch layout="+layout+" flip="+flip);
+    }
+    System.out.println("PASS four 1280x960 exact parity checks: both orientations, shared UV/VU, padded rows");
     // A previously warmed scratch array must not contribute pixels to the next real frame.
     byte[] reusedScratch=new byte[16];
     Layout warmed=new Layout(8,8,true,2,1,0,0);

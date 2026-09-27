@@ -161,8 +161,9 @@ namespace Physio.Capture
             readbacks=new CaptureReadbacks(checked(width*height*4));
             readbackTotalMs=copyTotalMs=submitTotalMs=maxSubmitMs=0;readbackCount=submitAttempts=maxPendingReadbacks=0;missedReasons.Clear();metricsLogged=false;
             captureStartedAt=Time.realtimeSinceStartupAsDouble;
-            // Preserve graphics API row order; never blit a previous camera texture onto the next timestamp.
-            encoder=new AndroidJavaObject("com.hth.capture.PhysioMp4Recorder",Path.Combine(directory,take+".mp4"),width,height,!SystemInfo.graphicsUVStartsAtTop);
+            // Quest Vulkan PCA/Texture2D readback is bottom-up; MediaCodec requires top-down rows.
+            // Verified with the asymmetric on-device benchmark; graphicsUVStartsAtTop is not readback row order.
+            encoder=new AndroidJavaObject("com.hth.capture.PhysioMp4Recorder",Path.Combine(directory,take+".mp4"),width,height,true);
             submitMethod=AndroidJNIHelper.GetMethodID(encoder.GetRawClass(),"submit","([BJ)Z");
         }
 

@@ -1,8 +1,8 @@
 # Codex session handoff
 
 **Last updated:** September 27, 2026. The UI redesign with restored automatic
-connection setup **0.3.1 / Android code 8** is built, installed wirelessly and
-launched on Quest 3. The headset authenticated against the existing private
+connection setup and corrected camera encoding **0.3.2 / Android code 9** is
+built, installed wirelessly and launched on Quest 3. The headset authenticated against the existing private
 processing service; all **305** saved app files survived unchanged. Source is on
 `codex/hci-quest-ui` in `/Users/baderasadi/.codex/worktrees/hci-quest-ui/HTH`, based
 on `main` at `1a9f9e3`. M1 and clinical evaluation remain incomplete: no new
@@ -114,6 +114,80 @@ the intended application version changes remain in project settings.
 Next: reopen the saved patient/test and choose **Process / retry**. Keep the
 laptop, wireless ADB and SSH tunnel available. A full app restart needs the
 private provisioning launcher again; credentials are not stored permanently.
+
+## Camera orientation regression (0.3.2)
+
+The user reported inference failure after recording with the UI rebuild. The
+private GPU log stopped at `require exactly one tracked person in every inference
+image`; authentication and upload had succeeded. The rebuilt recorder had lost
+an earlier verified encoding fix: `!SystemInfo.graphicsUVStartsAtTop` is not the
+row order of Quest Vulkan GPU readback. It wrote vertically inverted MP4 pixels
+while the sidecar described an upright image.
+
+The fix restores the proven explicit row reversal in `OpenEncoder`, marks new
+captures with adapter `85.0.0/2`, and retains the current framing/countdown UI.
+The independent `quest/Checks/check_capture_orientation.py` checks an asymmetric
+synthetic recording through the actual encoder. Its expected blue-above-red,
+green-on-left pattern rejects the earlier faulty recording. Capture checks:
+**106 passed**. C# review found no blocker.
+
+The processing pipeline now rejects exact legacy adapter `/1` before running
+any processor, including supplemental and historical foot sources, with an
+actionable new-test message. Existing recordings and saved results are retained.
+Only these reviewed validation hunks were applied to the private deployed source,
+preserving its other local enhancements. Four existing legacy sidecars were
+rejected and corrected `/2` metadata accepted without launching inference.
+The idle service restarted cleanly as PID **1511763**. Pipeline tests: **20
+passed**, Ruff clean, dependency audit clear; Python/security reviews passed.
+
+Before the user cancelled recovery, a private diagnostic isolated the fault:
+the failed take lost detection on **12/301** inference frames; explicit row
+reversal produced one unchanged identity in **301/301**. Full native diagnostic
+inference completed in **57.25 seconds**, with eight artifact size/hash checks,
+finite geometry and source-frame/time mappings verified. This was diagnostic
+output only. The user subsequently chose to record a new video: recovery work
+was stopped before creating a recovery package; nothing was imported or
+published, and no source recording or job record was changed. Diagnostic proof
+is outside Git under `Library/Caches/HTH/incident-20260927-0709/`; the private
+server has the matching incident directory.
+
+The first orientation-correct candidate exposed a second lost encoder fix:
+its synthetic benchmark encoded **84/90** frames, dropping six while conversion
+averaged **34.4 ms/frame**. Restored the existing expanded 2×2 YUV conversion and
+six-frame bounded scheduling queue; original timestamps and pixel values remain.
+Java review and strict compilation passed, including **1,600** randomized layout
+comparisons, **four** full-resolution comparisons, colour, padding, shared UV/VU,
+scratch reuse and cursor checks.
+
+The full Unity 6000.0.66f2 build succeeded. After the Java-only performance
+restoration, its generated Gradle project rebuilt with Unity's bundled Java and
+Gradle 8.13 (`assembleDebug`, **44 seconds**). All **428** Unity asset/native ZIP
+entries match the full-build candidate byte-for-byte; only `classes3.dex`
+changed. Final APK: **86,314,298 bytes**, SHA-256
+`3159f3edf3a9e2562e31b41c0587794eff4eab16bee267b9681c021c56348554`.
+Signing verification and wireless installation succeeded; the installed APK
+hash matches. All **305** saved app files match their pre-install hashes.
+
+The final on-Quest synthetic benchmark (PID **3810**, **07:30:36–39 EDT**)
+encoded **90/90** frames, **zero** misses or queue-full rejections, at **30.00 fps**.
+YUV conversion averaged **20.6 ms/frame**, maximum **24.0 ms**; sampled queue depth
+peaked at one. Mux timestamp verification and the independent upright-pixel
+oracle passed. The benchmark never opens a camera or creates patient evidence.
+This verifies the encoding path, not a fresh live capture-to-review run.
+
+Normal launch PID **4339** reached `PHYSIO_VIEWER_READY` and
+`PHYSIO_CONNECTION_READY` at **07:31:10 EDT** after the existing private launcher
+restored the automatic connection. The one-use configuration was consumed and
+deleted. Final proof is outside Git at
+`/Users/baderasadi/Library/Caches/HTH/hci-ui-deploy-032/`, including the Gradle log,
+APK comparison, before/after file hashes, synthetic metrics/pixels and startup log.
+
+Next: **start a new test and record fresh video**. Do not retry the known faulty
+`/1` recordings. No prerecorded recovery was performed. Keep the laptop, wireless
+ADB and SSH tunnel available; a full app restart needs session provisioning again.
+Source changes remain on `codex/hci-quest-ui`; the private service validation
+update and Quest 0.3.2 deployment are verified, while new live end-to-end inference
+and wearer acceptance remain to be tested.
 
 ## Mohammad's persistent inference experiment review
 

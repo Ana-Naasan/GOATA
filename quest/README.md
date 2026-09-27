@@ -1,7 +1,7 @@
 # Quest app
 
 **Last updated:** September 27, 2026. The UI redesign with restored automatic
-connection setup is version **0.3.1 / code 8**
+connection setup and corrected camera encoding is version **0.3.2 / code 9**
 on `codex/hci-quest-ui`, based on `main` at `1a9f9e3`. It uses one main workspace,
 a compact replay HUD, bounded movable panels, explicit camera framing/countdown,
 visual movement examples, grounded replay, anatomical evidence highlights and an
@@ -68,6 +68,8 @@ focus and valid tracked position/orientation instead of using an untracked pose.
   first saved view. Guidance and a separate Record control float beside the
   participant; the workspace hides during capture. Permission, countdown,
   automatic completion, stop, interruption and retry are explicit states.
+  Adapter `85.0.0/2` writes the verified upright row order. Older `/1` recordings
+  from the faulty encoder remain saved, but require a new test for processing.
 - **Saved views:** each performance stays separate with immutable originals and
   retakes. Progress and selected takes recover after restart/crash. Choose one
   ELK/RTK/Walking take for 3D replay after all four views are saved. Other views remain
@@ -130,6 +132,16 @@ wireless ADB connection and tunnel available. The startup check is an
 authenticated lookup of a random nonexistent job; it uploads no recording and
 starts no inference. It leaves local recording controls usable while offline.
 An authenticated connection does not establish GPU/model readiness.
+
+### Check camera encoding orientation
+
+For a development build, launch with Android intent boolean
+`physio_capture_benchmark=true`. This records an asymmetric synthetic texture
+through the same GPU readback and MP4 encoder without opening the camera.
+Pull the new MP4 from the app cache's `synthetic-capture-benchmark` directory and
+run `python3 quest/Checks/check_capture_orientation.py /path/to/synthetic.mp4`.
+The independent pixel check requires blue above red and the green stripe on
+the left. A codec round trip alone does not establish correct orientation.
 
 The first-display timing is recorded after an end-of-frame boundary, including
 loading/binding. Continuous sessions use a monotonic interval from the final

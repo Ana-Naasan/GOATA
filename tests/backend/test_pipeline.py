@@ -82,6 +82,51 @@ def runtime_inputs(tmp_path):
     return video, sidecar
 
 
+def test_legacy_inverted_capture_is_rejected_before_gpu_launch(tmp_path, monkeypatch):
+    video, sidecar = runtime_inputs(tmp_path)
+    metadata = json.loads(sidecar.read_text())
+    metadata["adapter"] = {"name": "Meta.MRUK.PassthroughCameraAccess/HTH.AndroidMediaCodec", "version": "85.0.0/1"}
+    sidecar.write_text(json.dumps(metadata))
+    originals = video.read_bytes(), sidecar.read_bytes()
+    monkeypatch.setattr("processing.pipeline.subprocess.Popen", lambda *_args, **_kwargs: pytest.fail("Legacy inverted capture reached GPU"))
+    config = settings(tmp_path, inference_command=(sys.executable, "-c", "pass"), inference_cwd=tmp_path)
+    with pytest.raises(PipelineError, match="upside down"):
+        run_inference(video, sidecar, tmp_path / "run", config)
+    assert originals == (video.read_bytes(), sidecar.read_bytes())
+
+
+def test_corrected_capture_can_reach_inference(tmp_path):
+    video, sidecar = runtime_inputs(tmp_path)
+    metadata = json.loads(sidecar.read_text())
+    metadata["adapter"] = {"name": "Meta.MRUK.PassthroughCameraAccess/HTH.AndroidMediaCodec", "version": "85.0.0/2"}
+    sidecar.write_text(json.dumps(metadata))
+    config = settings(tmp_path, inference_command=(sys.executable, "-c", "pass"), inference_cwd=tmp_path)
+    run_inference(video, sidecar, tmp_path / "run", config)
+
+
+@pytest.mark.parametrize("source", ["replay", "supplemental", "barefoot"])
+def test_all_legacy_sources_are_rejected_before_processing(tmp_path, monkeypatch, source):
+    capture, inputs, _, output, _, _ = native_fixture(tmp_path)
+    take = capture["takes"][0]
+    if source == "supplemental":
+        extra = {**take, "take_id": str(uuid4()), "frame_metadata": {**take["frame_metadata"], "member": "extra.json"}}
+        capture = {**capture, "takes": [take, extra]}
+        shutil.copyfile(inputs / "files" / take["frame_metadata"]["member"], inputs / "files" / "extra.json")
+        take = extra
+    if source == "barefoot":
+        capture = {key: value for key, value in capture.items() if key != "replay_take_id"}
+        capture = {**capture, "test_type": "barefoot"}
+    sidecar = inputs / "files" / take["frame_metadata"]["member"]
+    metadata = {**json.loads(sidecar.read_text()), "adapter": {
+        "name": "Meta.MRUK.PassthroughCameraAccess/HTH.AndroidMediaCodec", "version": "85.0.0/1"}}
+    sidecar.write_text(json.dumps(metadata))
+    def unexpected(*_args, **_kwargs):
+        pytest.fail("Legacy source reached a processor")
+    monkeypatch.setattr("processing.pipeline.run_inference", unexpected)
+    with pytest.raises(PipelineError, match="upside down"):
+        Pipeline(settings(tmp_path), microscope=unexpected)(inputs, output, capture, context(capture), lambda _: None)
+
+
 def test_runtime_command_uses_arguments_without_shell_and_strips_token(tmp_path, monkeypatch):
     video, sidecar = runtime_inputs(tmp_path)
     destination = tmp_path / "run; not a shell"
