@@ -22,6 +22,9 @@ namespace Physio.Viewer
     {
         [SerializeField] private FixtureViewer viewer = null!;
         [SerializeField] private GameObject workspaceVisuals = null!;
+        [SerializeField] private RectTransform workspaceCanvas = null!;
+        [SerializeField] private RectTransform workspaceBackplate = null!;
+        [SerializeField] private Transform workspaceHandle = null!;
         [SerializeField] private SpatialCaptureOverlay captureOverlay = null!;
         [SerializeField] private TMP_Text heading = null!;
         [SerializeField] private TMP_Text context = null!;
@@ -32,6 +35,9 @@ namespace Physio.Viewer
         [SerializeField] private Button primary = null!;
         [SerializeField] private Button secondary = null!;
         [SerializeField] private Button[] rows = Array.Empty<Button>();
+        [SerializeField] private GameObject listPager = null!;
+        [SerializeField] private Button previousPage = null!;
+        [SerializeField] private Button nextPage = null!;
         [SerializeField] private GameObject replayControls = null!;
         [SerializeField] private RawImage preview = null!;
         [SerializeField] private RawImage amplifiedPreview = null!;
@@ -40,10 +46,14 @@ namespace Physio.Viewer
         [SerializeField] private GameObject reviewTabs = null!;
         [SerializeField] private Button observationsTab = null!;
         [SerializeField] private Button assessmentTab = null!;
+        [SerializeField] private Button previousObservations = null!;
+        [SerializeField] private Button nextObservations = null!;
 
         private enum Screen { Patients, History, Tests, CaptureSetup, Capture, CaptureSummary, Processing, Review, Finding, Feature, Foot, Microscope, Options, Versions, Demo }
         private Screen screen;
         private Screen returnScreen;
+        private Screen detailReturnScreen;
+        public bool IsReplayScreen => screen == Screen.Review || screen == Screen.Finding || screen == Screen.Demo;
         private LocalPatientStore store = null!;
         private QuestTakeRecorder recorder = null!;
         private EvidencePanel evidence = null!;
@@ -72,10 +82,24 @@ namespace Physio.Viewer
         private CancellationTokenSource? processingCancellation;
         private TaskCompletionSource<bool>? frameCompletion;
         private readonly ConcurrentQueue<ProcessingUpdate> updates = new();
+        private string processingStage = "";
+        private double processingElapsedAtUpdate;
+        private float processingUpdateTime;
+        private int displayedProcessingSecond = -1;
         private TouchScreenKeyboard? keyboard;
         private Action<string>? keyboardDone;
         private string error = "";
         private bool hadFocus = true;
+        private bool insightsVisible = true;
+        public bool IsInsightsVisible => screen == Screen.Review && insightsVisible;
+
+        public void ToggleInsights()
+        {
+            if (screen != Screen.Review || !viewer.HasInputFocus) return;
+            insightsVisible = !insightsVisible;
+            if (insightsVisible) viewer.BringPanelToView();
+            workspaceVisuals.SetActive(insightsVisible);
+        }
 
         private void Start()
         {
@@ -96,6 +120,8 @@ namespace Physio.Viewer
         private void Update()
         {
             var focus = viewer.HasInputFocus;
+            var workspaceNeeded = screen != Screen.Capture && (screen != Screen.Review || insightsVisible);
+            workspaceVisuals.SetActive(workspaceNeeded);
             if (hadFocus && !focus) evidence.Pause();
             hadFocus = focus;
             captureOverlay.SetVisible(screen == Screen.Capture && focus);
@@ -116,8 +142,21 @@ namespace Physio.Viewer
                 if (screen != Screen.Processing) continue;
                 var count = update.Completed.HasValue && update.Total.HasValue
                     ? $" · {update.Completed}/{update.Total} {update.Unit}" : "";
-                status.text = $"{update.Stage}{count} · {update.Elapsed.TotalSeconds:0}s since capture";
+                processingStage = update.Stage + count;
+                processingElapsedAtUpdate = update.Elapsed.TotalSeconds;
+                processingUpdateTime = Time.unscaledTime;
+                displayedProcessingSecond = -1;
                 body.text = update.Detail;
+            }
+            if (screen == Screen.Processing && busy && processingStage.Length > 0)
+            {
+                var seconds = Mathf.Max(0, (float)processingElapsedAtUpdate + Time.unscaledTime - processingUpdateTime);
+                var wholeSeconds = Mathf.FloorToInt(seconds);
+                if (wholeSeconds != displayedProcessingSecond)
+                {
+                    displayedProcessingSecond = wholeSeconds;
+                    status.text = $"{processingStage} · {wholeSeconds}s since final capture";
+                }
             }
             if (screen != Screen.Capture) return;
             status.text = !string.IsNullOrEmpty(captureSaveError) ? captureSaveError : string.IsNullOrEmpty(recorder.Error) ? recorder.Status : recorder.Error;
@@ -136,7 +175,7 @@ namespace Physio.Viewer
 
         public void OpenOptions()
         {
-            if (busy || CaptureBusy) return;
+            if (busy || CaptureBusy || NeedsCaptureSave) return;
             if (screen == Screen.Options) { Show(returnScreen); return; }
             returnScreen = screen;
             viewer.PauseReplay();
@@ -145,10 +184,18 @@ namespace Physio.Viewer
 
         private void Show(Screen next, bool resetPage = true)
         {
-            if (CaptureBusy && next != Screen.Capture) { status.text = "Stop and save the active recording first."; return; }
+            if ((CaptureBusy || NeedsCaptureSave) && next != Screen.Capture) { status.text = "Finish saving this recording before leaving capture."; return; }
+            var previousScreen = screen;
+            if (next != Screen.Review && next != Screen.Demo)
+                viewer.GetComponent<ReplayPlayInteractions>()?.SetPlayMode(false);
+            if ((next == Screen.Finding || next == Screen.Feature) &&
+                (previousScreen == Screen.Review || previousScreen == Screen.Foot || previousScreen == Screen.Microscope))
+                detailReturnScreen = previousScreen;
+            if (previousScreen == Screen.Capture && next != Screen.Capture && recorder.IsPreviewing) recorder.StopTake();
             screen = next;
             originalEvidenceOpen = false;
-            workspaceVisuals.SetActive(next != Screen.Capture);
+            if (previousScreen == Screen.Capture && next != Screen.Capture) viewer.BringPanelToView();
+            workspaceVisuals.SetActive(next != Screen.Capture && (next != Screen.Review || insightsVisible));
             captureOverlay.SetVisible(next == Screen.Capture && viewer.HasInputFocus);
             if (resetPage) page = 0;
             evidence.Stop();
@@ -161,16 +208,23 @@ namespace Physio.Viewer
             previewRoot.SetActive(false);
             amplifiedPreview.transform.parent.gameObject.SetActive(false);
             reviewTabs.SetActive(next == Screen.Review);
+            listPager.SetActive(false);
+            var panelHeight = next == Screen.CaptureSetup || next == Screen.Review || next == Screen.Finding || next == Screen.Feature ||
+                next == Screen.Foot || next == Screen.Microscope ? 940f : 800f;
+            workspaceCanvas.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, panelHeight);
+            workspaceBackplate.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, panelHeight);
+            workspaceHandle.localPosition = new Vector3(0f, -panelHeight * .0005f - .022f, -.018f);
             foreach (var row in rows)
             {
                 row.gameObject.SetActive(false);
-                var layout = row.GetComponent<LayoutElement>(); layout.minHeight = layout.preferredHeight = 56;
+                var layout = row.GetComponent<LayoutElement>(); layout.minHeight = layout.preferredHeight = 68;
                 var label = row.GetComponentsInChildren<TMP_Text>(true).First(t => t.name == "Label"); label.fontSize = 24; label.color = Color.white;
             }
             body.fontSize = 24;
             SetAction(primary, "", null); SetAction(secondary, "", null);
             body.text = "";
-            SetBodyHeight(next == Screen.Review ? 56 : next == Screen.Finding || next == Screen.Feature ? 300 : next == Screen.Capture || next == Screen.Microscope || next == Screen.Foot ? 96 : 150);
+            SetBodyHeight(next == Screen.Review ? 56 : next == Screen.Finding || next == Screen.Feature ? 300 :
+                next == Screen.CaptureSetup ? 240 : 96);
             status.text = error; error = "";
             context.text = patient == null ? "LOCAL PATIENTS · QUEST 3" : patient.DisplayName +
                 (session == null ? " · Patient history" : $"\n{ReviewEvidence.TestName(session.TestType)} · {session.CreatedAt.ToLocalTime():MMM d, HH:mm}");
@@ -203,7 +257,7 @@ namespace Physio.Viewer
             heading.text = "Your patients";
             var list = store.Patients();
             body.text = list.Count == 0 ? "Create a local patient profile to begin a dated assessment." : "Choose a patient to view saved tests or start a new capture.";
-            List(list.Select(p => (p.DisplayName + " · " + p.Id.ToString("N").Substring(0, 6), (Action)(() =>
+            List(list.Select(p => (p.DisplayName + " · added " + p.CreatedAt.ToLocalTime().ToString("MMM d, HH:mm"), (Action)(() =>
             { patient = p; session = null; result = null; manifest = null; Show(Screen.History); }))).ToArray());
             SetAction(primary, "New patient", () => Keyboard("Patient display name", false, name =>
             { patient = store.CreatePatient(name); session = null; result = null; Show(Screen.History); }));
@@ -215,7 +269,7 @@ namespace Physio.Viewer
             heading.text = "Saved assessments";
             var list = store.History(patient.Id);
             body.text = list.Count == 0 ? "No tests yet. Each new assessment keeps its own recording and result." : "Select a dated test. Saved results reopen exactly as processed.";
-            List(list.Select(s => ($"{s.CreatedAt.ToLocalTime():MMM d · HH:mm}   {s.TestType.ToUpperInvariant()}   {s.Status}",
+            List(list.Select(s => ($"{ReviewEvidence.TestName(s.TestType)} · {s.CreatedAt.ToLocalTime():MMM d, HH:mm}\n{ReviewEvidence.SessionStatus(s.Status)}",
                 (Action)(() => OpenSession(s)))).ToArray());
             SetAction(primary, "New assessment", () => { session = null; result = null; manifest = null; Show(Screen.Tests); });
         }
@@ -247,6 +301,18 @@ namespace Physio.Viewer
                 var restored = await Task.Run(() => store.GuidedCapture(selected.PatientId, selected.Id));
                 if (this == null || patient?.Id != selected.PatientId || session?.Id != selected.Id) return;
                 guidedCapture = restored;
+                var lastCapture = recorder.LastCapture;
+                if (lastCapture != null && restored != null &&
+                    Guid.TryParse(lastCapture.SessionId, out var lastSessionId) && lastSessionId == selected.Id &&
+                    Guid.TryParse(lastCapture.TakeId, out var lastTakeId))
+                {
+                    var savedView = restored.Views.FirstOrDefault(view => view.TakeIds.Contains(lastTakeId));
+                    if (savedView != null)
+                    {
+                        savedTake = attemptedTake = lastCapture.TakeId.ToString();
+                        lastSavedView = savedView.View;
+                    }
+                }
                 if (guidedCapture != null) { captureSide = SpatialCapturePresentation.FootSide(guidedCapture.FootSide); targetDurationSeconds = guidedCapture.TargetDurationSeconds; }
                 consentConfirmed = false;
                 busy = false;
@@ -260,14 +326,14 @@ namespace Physio.Viewer
         private void RenderTests()
         {
             heading.text = "Choose an assessment";
-            body.text = "Three supported tests. Findings remain specific to the selected test and original recording.";
+            body.text = "Choose one protocol. Each uses four separate recordings: right, front, back and left. You can return to a saved draft.";
             var tests = ReviewEvidence.NewTests();
             for (var i = 0; i < tests.Length; i++)
             {
                 var type = tests[i];
                 SetRow(i, ReviewEvidence.TestName(type), () =>
                 {
-                    session = store.CreateSession(patient!.Id, type); consentConfirmed = false;
+                    pendingTestType = type; session = null; consentConfirmed = false;
                     primarySessionId = null; microscopeHold = false;
                     guidedCapture = null; targetDurationSeconds = 10; captureView = "right"; captureSide = "left"; replayView = "right";
                     savedTake = attemptedTake = captureSaveError = lastSavedView = ""; Show(Screen.CaptureSetup);
@@ -279,11 +345,12 @@ namespace Physio.Viewer
         {
             if (patient == null || session == null || CaptureBusy || busy) return;
             primarySessionId = session.Id;
-            session = store.CreateSession(patient.Id, session.TestType);
+            pendingTestType = session.TestType;
+            session = null;
             microscopeHold = true; guidedCapture = null; targetDurationSeconds = 10; lastSavedView = "";
             consentConfirmed = false;
             savedTake = attemptedTake = captureSaveError = "";
-            Show(Screen.Capture);
+            Show(Screen.CaptureSetup);
         }
 
         private void RenderProcessing()
@@ -305,6 +372,10 @@ namespace Physio.Viewer
             { if (screen == Screen.Options) status.text = "Set the service URL and access token first."; else OpenOptions(); return; }
             busy = true;
             Show(Screen.Processing);
+            while (updates.TryDequeue(out _)) { }
+            processingStage = "";
+            displayedProcessingSecond = -1;
+            status.text = "Preparing recording for upload…";
             processingCancellation = new CancellationTokenSource();
             var patientId = patient.Id; var sessionId = session.Id; var retry = forceNewVersion || session.Status == "failed";
             try
@@ -336,6 +407,10 @@ namespace Physio.Viewer
             if (this == null) return;
             result = loaded; manifest = loaded.Manifest; finding = null;
             reviewCapture = opened.Capture; selectedObservation = null; showObservations = true;
+            insightsVisible = data == null;
+            GetComponent<HandReplayPanel>().SetContext(patient == null || session == null ? "Replay" :
+                patient.DisplayName + " · " + ReviewEvidence.TestName(session.TestType) + " · " +
+                session.CreatedAt.ToLocalTime().ToString("MMM d, HH:mm"));
             if (data != null) viewer.LoadReplay(data); else viewer.ClearReplay();
             Show(Screen.Review);
             if (markFirstDisplay && patient != null && session != null)
@@ -379,19 +454,19 @@ namespace Physio.Viewer
             if (finding == null || result == null) { Show(Screen.Review); return; }
             heading.text = finding["observation_id"] != null ? InsightPresentation.EstimatedLabel((string)finding["label"]!) : (string)finding["label"]!;
             var interval = finding["evidence"]!;
-            var metrics = finding["metrics"] is JArray values ? string.Join("\n", values.Select(m =>
-                $"{m["name"]}: {m["value"]} {m["unit"]} · {m["basis"]} · scale {m["scale_status"]} {m["scale_provenance"]}")) : "";
-            var text = $"{finding["label"]}\n{finding["explanation"]}\n\n{finding["region"]} · {finding["side"]} · {interval["condition"]}\n" +
-                $"Source {interval["take_id"]}\n{interval["start_s"]}–{interval["end_s"]}s · quality {interval["quality"]}\n" +
-                $"{interval["quality_reason"]}\n{metrics}\n" + string.Join("\n", finding["limitations"]!.Select(v => (string)v!));
             var methodId = (string?)finding["method_id"];
             var method = manifest?["methods"]?.FirstOrDefault(m => (string?)m["method_id"] == methodId);
-            if (method != null) text += $"\nMethod: {method["name"]} · {method["version"]}";
+            var text = finding["observation_id"] != null
+                ? InsightPresentation.Details(finding, EvidenceView(finding), method)
+                : $"{finding["explanation"]}\n\n{InsightPresentation.Source(finding, EvidenceView(finding))} · {interval["condition"]}\n" +
+                  $"Evidence: {interval["quality"]} · {interval["quality_reason"]}\n" +
+                  $"{InsightPresentation.Metrics(finding)}\nLimitations\n" +
+                  string.Join("\n", finding["limitations"]!.Select(v => (string)v!)) +
+                  (method == null ? "" : $"\nMethod: {method["name"]} · {method["version"]}");
             var takeId = Guid.Parse((string)interval["take_id"]!);
             if (result.ReplayTakeId == takeId)
                 viewer.SelectFinding(new FindingInterval(takeId, (double)interval["start_s"]!, (double)interval["end_s"]!),
                     finding["highlight_joint_names"]?.Values<string>().Where(name => name != null).Select(name => name!).ToArray() ?? Array.Empty<string>(), (string?)finding["region"] ?? "Selected region");
-            if (finding["observation_id"] != null) text = InsightPresentation.Details(finding, EvidenceView(finding), method);
             Detail(text);
             SetAction(primary, "Open original evidence", () => OpenEvidence(finding));
             SetAction(secondary, "Motion microscope", () => Show(Screen.Microscope));
@@ -487,32 +562,34 @@ namespace Physio.Viewer
 
         private void RenderOptions()
         {
-            heading.text = "Workspace options";
-            body.text = $"Processing service: {(string.IsNullOrEmpty(endpoint) ? "not connected" : endpoint)}\n" +
-                $"Access token: {(string.IsNullOrEmpty(token) ? "not entered" : "set for this app session")}\nDisplay changes never alter stored measurements.";
-            var actions = new (string, Action)[]
+            heading.text = "Options";
+            var items = new List<(string, Action)>();
+            if (returnScreen == Screen.Processing || returnScreen == Screen.CaptureSummary || returnScreen == Screen.Patients)
             {
-                ("Set HTTPS service URL", () => Keyboard("https://your-service", false, value =>
-                { var uri = new Uri(value.Trim()); ProcessingClient.ValidateEndpoint(uri); endpoint = uri.AbsoluteUri.TrimEnd('/'); PlayerPrefs.SetString("physio.processing.url", endpoint); PlayerPrefs.Save(); Show(Screen.Options); })),
-                ("Enter access token", () => Keyboard("Service access token", true, value => { token = value.Trim(); Show(Screen.Options); })),
-                ("Bring controls here", () => { viewer.BringPanelToView(); captureOverlay.PlaceSurfaces(); }),
-                ("Reset replay placement", viewer.ResetReplayPlacement),
-                ("Toggle skeleton", viewer.ToggleSkeletonVisibility),
-                ("Toggle body opacity", viewer.ToggleBodyOpacity),
-                ("Replay smaller", viewer.ScaleReplayDown),
-                ("Replay larger", viewer.ScaleReplayUp),
-                ("Open synthetic interaction lab", () => { patient = null; session = null; result = null; manifest = null; viewer.LoadDemo(); Show(Screen.Demo); })
-            };
-            var items = actions.ToList();
-            if (session != null && patient != null)
-            {
-                items.Insert(0, ("Saved result versions", () => Show(Screen.Versions)));
-                if (session.Status == "loaded" || session.Status == "ready" || session.Status == "failed")
-                    items.Insert(0, ("Reprocess saved capture · new version", () =>
-                    { session = store.Session(patient.Id, session.Id); ProcessSavedCapture(true); }));
+                body.text = $"Service: {(string.IsNullOrEmpty(endpoint) ? "Not connected" : endpoint)}\n" +
+                    $"Access: {(string.IsNullOrEmpty(token) ? "Token needed" : "Token ready for this session")}";
+                items.Add(("Service address", () => Keyboard("https://your-service", false, value =>
+                { var uri = new Uri(value.Trim()); ProcessingClient.ValidateEndpoint(uri); endpoint = uri.AbsoluteUri.TrimEnd('/'); PlayerPrefs.SetString("physio.processing.url", endpoint); PlayerPrefs.Save(); Show(Screen.Options); })));
+                items.Add(("Access token", () => Keyboard("Service access token", true, value => { token = value.Trim(); Show(Screen.Options); })));
             }
+            else if (returnScreen == Screen.Review || returnScreen == Screen.Finding || returnScreen == Screen.Microscope)
+            {
+                body.text = "Replay display settings. Display changes do not alter measurements.";
+                items.Add(("Show / hide skeleton", viewer.ToggleSkeletonVisibility));
+                items.Add(("Change body opacity", viewer.ToggleBodyOpacity));
+                items.Add(("Place replay on floor again", viewer.ResetReplayPlacement));
+                if (session?.ResultId != null) items.Add(("Saved result versions", () => Show(Screen.Versions)));
+            }
+            else body.text = "Move this panel with the bar below it. Use two hands to resize.";
+            if (returnScreen == Screen.Processing && session != null && patient != null &&
+                (session.Status == "loaded" || session.Status == "ready" || session.Status == "failed"))
+                items.Add(("Reprocess saved capture", () =>
+                { session = store.Session(patient.Id, session.Id); ProcessSavedCapture(true); }));
             List(items.ToArray());
-            SetAction(primary, "Resume", () => Show(returnScreen));
+            SetAction(primary, returnScreen == Screen.Capture ? "Bring capture controls here" : "Resume", () =>
+            {
+                Show(returnScreen);
+            });
         }
 
         private void RenderVersions()
@@ -531,30 +608,41 @@ namespace Physio.Viewer
             var pages = ReviewEvidence.Pages(text);
             detailPage = Math.Min(detailPage, pages.Length - 1);
             body.text = pages[detailPage];
-            if (pages.Length > 1) SetRow(0, $"More detail · {detailPage + 1}/{pages.Length}", () => { detailPage = (detailPage + 1) % pages.Length; if (screen == Screen.Finding) RenderFinding(); else Detail(text); });
+            if (pages.Length <= 1) return;
+            listPager.SetActive(true);
+            SetAction(previousPage, $"Previous · {detailPage + 1}/{pages.Length}", detailPage > 0 ? () =>
+            { detailPage--; if (screen == Screen.Finding) RenderFinding(); else Detail(text); } : null);
+            SetAction(nextPage, $"Next · {detailPage + 1}/{pages.Length}", detailPage < pages.Length - 1 ? () =>
+            { detailPage++; if (screen == Screen.Finding) RenderFinding(); else Detail(text); } : null);
         }
 
         private void List((string Label, Action Action)[] items, int size = 4)
         {
             size = Math.Min(size, rows.Length);
             var paginated = items.Length > size;
-            var contentSize = paginated ? Math.Max(1, size - 1) : size;
+            var contentSize = paginated ? Math.Min(3, size) : size;
             var count = Math.Max(1, (items.Length + contentSize - 1) / contentSize);
             page = Math.Min(page, count - 1);
             for (var i = 0; i < contentSize && page * contentSize + i < items.Length; i++)
             { var item = items[page * contentSize + i]; SetRow(i, item.Label, item.Action); }
-            if (paginated) SetRow(size - 1, $"Next page · {page + 1}/{count}", () => { page = (page + 1) % count; Show(screen, false); });
+            if (!paginated) return;
+            listPager.SetActive(true);
+            SetAction(previousPage, $"Previous · {page + 1}/{count}", page > 0 ? () => { page--; Show(screen, false); } : null);
+            SetAction(nextPage, $"Next · {page + 1}/{count}", page < count - 1 ? () => { page++; Show(screen, false); } : null);
         }
 
         private void Back()
         {
-            if (busy || CaptureBusy) { status.text = "Finish the active capture or processing before leaving."; return; }
+            if (busy || CaptureBusy || NeedsCaptureSave) { status.text = "Finish saving this recording before leaving."; return; }
             error = "";
             if (originalEvidenceOpen) { Show(screen == Screen.Finding ? Screen.Finding : Screen.Review, false); return; }
             switch (screen)
             {
                 case Screen.Options: Show(returnScreen); break;
-                case Screen.Versions: case Screen.Finding: case Screen.Feature: case Screen.Foot: case Screen.Microscope: Show(Screen.Review); break;
+                case Screen.Finding: case Screen.Feature: Show(detailReturnScreen); break;
+                case Screen.Versions: case Screen.Foot: case Screen.Microscope: Show(Screen.Review); break;
+                case Screen.CaptureSetup when microscopeHold: ReturnToPrimaryReview(); break;
+                case Screen.CaptureSetup when session == null: Show(Screen.Tests); break;
                 case Screen.Review: case Screen.CaptureSetup: case Screen.Capture: case Screen.CaptureSummary: case Screen.Processing: case Screen.Tests:
                     session = null; result = null; manifest = null; Show(Screen.History); break;
                 default: patient = null; session = null; result = null; manifest = null; Show(Screen.Patients); break;

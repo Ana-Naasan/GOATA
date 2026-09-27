@@ -25,9 +25,14 @@ namespace Physio.Viewer
             if (data == null) throw new ArgumentNullException(nameof(data));
             ClearReplay();
             replay = data;
+            firstSurfaceBottom = data.FirstObservedSurfaceBottom();
+            replayPanel?.ResetPlacement();
             clock = new ReplayClock(data.Timeline);
             speedIndex = 2;
             lastRenderedFrame = -1;
+            replayDisplayRoot!.localScale = Vector3.one * initialDisplayScale;
+            PlaceReplayRootFromRig();
+            CaptureInitialPlacement();
             BuildMesh(); BuildSkeleton(); BindPanel();
             RenderCurrentFrame(true);
             SetReplayVisible(true);
@@ -42,6 +47,7 @@ namespace Physio.Viewer
             foreach (var bone in boneLines) { bone.gameObject.SetActive(false); Destroy(bone.gameObject); }
             jointObjects.Clear(); boneLines.Clear();
             replay = null; clock = null; mesh = null; meshObject = null; meshVertices = null;
+            firstSurfaceBottom = 0f;
             findingJointNames = Array.Empty<string>(); findingHighlightVisible = false;
             ClearRegionMarker();
             SetReplayVisible(false);
@@ -53,12 +59,15 @@ namespace Physio.Viewer
         public void SetReplayVisible(bool visible)
         {
             if (!visible) PauseReplay();
+            if (!visible) GetComponent<ReplayPlayInteractions>()?.SetPlayMode(false);
+            if (!visible) GetComponent<ReplayEnvironment>()?.SetQuietRoom(false);
             if (replayDisplayRoot != null) replayDisplayRoot.gameObject.SetActive(visible);
         }
 
         public void SelectFinding(FindingInterval interval, string[] jointNames, string region = "Selected region")
         {
             if (clock == null) return;
+            GetComponent<ReplayPlayInteractions>()?.SetPlayMode(false);
             clock = clock.SelectFinding(interval);
             findingJointNames = (string[])jointNames.Clone();
             regionLabel = region;

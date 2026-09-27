@@ -1,18 +1,18 @@
 # Quest app
 
-**Last updated:** September 27, 2026. Walking review and estimated observations
-are implemented on `codex/walking-insights`, based on `main` at `3bad1a7` (PR #11).
-`docs/HANDOFF.md` records the current build and device proof. The previous capture
-build recorded all 90 synthetic frames at 30 fps on two cold launches; this does
-not verify real-camera recording. Wearer acceptance and clinical evaluation remain
-incomplete.
+**Last updated:** September 27, 2026. The UI redesign is version **0.3.0 / code 7**
+on `codex/hci-quest-ui`, based on `main` at `1a9f9e3`. It uses one main workspace,
+a compact replay HUD, bounded movable panels, explicit camera framing/countdown,
+visual movement examples, grounded replay, anatomical evidence highlights and an
+optional Moon environment with Play mode. `docs/HANDOFF.md` records current build
+and installation evidence. Wearer acceptance and clinical evaluation remain
+incomplete; automated checks and startup logs do not establish physical usability.
 
-The September 27 insights APK built and installed on Quest 3; installed SHA-256:
-`91920fa27f6f3d860b3bdd4a67e519b46c1543fb771b8ea687c7326c2131f3b9`.
-The headset contains an isolated **PUBLIC DEMO - WALKING** saved result from a
-fresh public-video GPU run. It is a fixture with adapted capture metadata, not a
-participant assessment. The app still needs a configured authenticated processing
-service for new captures; device UI/video-seek acceptance remains pending.
+Walking review and estimated observations remain available alongside ELK/RTK and
+historical barefoot sessions. **PUBLIC DEMO - WALKING** is a fixture with adapted
+capture metadata, not a participant assessment. New captures still require a
+configured authenticated processing service. No service deployment is implied by
+installing this client APK.
 
 ## Open and build
 

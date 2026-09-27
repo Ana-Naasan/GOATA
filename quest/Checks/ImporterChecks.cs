@@ -61,6 +61,7 @@ Check(data.Synthetic && data.ScaleStatus == "estimated" && data.ScaleProvenance.
 Check(data.VertexAt(0, 0) == new Vector3(-.25f, 0, 0), "left tip axis");
 Check(data.VertexAt(0, 1) == new Vector3(.5f, 0, 0), "asymmetric right tip axis");
 Check(data.VertexAt(0, 3) == new Vector3(0, .1f, .4f), "positive forward apex");
+Check(data.FirstObservedSurfaceBottom() == 0f, "presentation floor uses observed surface, not head height");
 Check(data.TriangleIndexAt(0) == 0 && data.TriangleIndexAt(1) == 2 && data.TriangleIndexAt(2) == 1, "triangle winding preserved");
 Check(data.JointAt(3, 0) == new Vector3(.3f, 0, .15f), "root motion retained");
 Check(data.JointParentAt(0) == -1 && data.JointParentAt(2) == 0 && data.JointNameAt(1) == "high_tip", "skeleton metadata");

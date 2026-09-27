@@ -51,6 +51,20 @@ namespace Physio.Replay
             return vertices[frame * VertexCount + vertex];
         }
 
+        // Presentation-only floor anchor; the model's metres are not a measured Quest-world scale.
+        public float FirstObservedSurfaceBottom()
+        {
+            for (var frame = 0; frame < FrameCount; frame++)
+            {
+                if (!frameValid[frame]) continue;
+                var bottom = float.PositiveInfinity;
+                for (var vertex = 0; vertex < VertexCount; vertex++)
+                    bottom = Math.Min(bottom, vertices[frame * VertexCount + vertex].Y);
+                return bottom;
+            }
+            return 0f;
+        }
+
         public Vector3 JointAt(int frame, int joint)
         {
             if (!IsJointValid(frame, joint)) throw new InvalidOperationException("This joint is not observed.");

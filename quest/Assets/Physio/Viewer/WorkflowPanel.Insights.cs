@@ -30,12 +30,19 @@ namespace Physio.Viewer
             var observationStatus = InsightPresentation.ObservationStatus((string?)manifest["schema_version"], (string?)Feature("observations")?["status"], observations.Length);
             var pages = Math.Max(1, (observations.Length + 2) / 3);
             page = InsightPresentation.ClampObservationPage(page, observations.Length, showObservations);
-            SetAction(observationsTab, "Observations" + (showObservations && pages > 1 ? $" {page + 1}/{pages} · next" : ""), () =>
-            { page = showObservations ? (page + 1) % pages : 0; showObservations = true; Show(Screen.Review, false); });
-            SetAction(assessmentTab, "Assessment", () => { showObservations = false; Show(Screen.Review); });
+            SetAction(observationsTab, showObservations ? "● Observations" : "Observations",
+                () => { showObservations = true; Show(Screen.Review); });
+            SetAction(assessmentTab, showObservations ? "Findings" : "● Findings",
+                () => { showObservations = false; Show(Screen.Review); });
+            SetAction(previousObservations, showObservations && pages > 1 ? "Previous" : "",
+                showObservations && page > 0 ? () => { page--; Show(Screen.Review, false); } : null);
+            SetAction(nextObservations, showObservations && pages > 1 ? "Next" : "",
+                showObservations && page < pages - 1 ? () => { page++; Show(Screen.Review, false); } : null);
             var elapsed = result?.ResultId == session?.ResultId && session?.CaptureToLoadedSeconds is double seconds
                 ? $" · {seconds:0.0}s capture → display" + (session.CaptureTimingBasis == "monotonic" ? "" : " (wall-clock estimate)") : "";
-            status.text = "RESEARCH · UNVALIDATED" + elapsed + "\n" + (showObservations ? assessmentStatus.Replace("\n", " · ") : observationStatus);
+            status.text = "RESEARCH · NOT CLINICALLY VALIDATED" + elapsed +
+                (showObservations && pages > 1 ? $" · observations {page + 1}/{pages}" : "") +
+                "\n" + (showObservations ? observationStatus : assessmentStatus.Replace("\n", " · "));
             if (showObservations && observations.Length > 0) RenderObservations(observations);
             else RenderAssessmentOrUnavailable(assessmentStatus, observationStatus, assessment);
         }
@@ -44,13 +51,13 @@ namespace Physio.Viewer
         {
             var visible = observations.Skip(page * 3).Take(3).ToArray();
             if (selectedObservation == null || !visible.Contains(selectedObservation)) selectedObservation = visible[0];
-            body.fontSize = 20; SetBodyHeight(132);
+            body.fontSize = 20; SetBodyHeight(120);
             body.text = InsightPresentation.Summary(selectedObservation, EvidenceView(selectedObservation));
             for (var index = 0; index < visible.Length; index++)
             {
                 var item = visible[index];
                 SetRow(index, (item == selectedObservation ? "Selected · " : "") + InsightPresentation.Card(item, EvidenceView(item)), () =>
-                { selectedObservation = item; Show(Screen.Review, false); });
+                { selectedObservation = item; Show(Screen.Review, false); FocusObservation(item, false); });
                 var layout = rows[index].GetComponent<LayoutElement>(); layout.minHeight = layout.preferredHeight = 90;
                 var label = rows[index].GetComponentsInChildren<TMP_Text>(true).First(text => text.name == "Label");
                 label.fontSize = 20; label.color = item == selectedObservation ? new Color(1f, .84f, .42f) : Color.white;
@@ -58,7 +65,6 @@ namespace Physio.Viewer
             SetRow(3, "Details · method and all limitations", () =>
             { finding = selectedObservation; detailPage = 0; Show(Screen.Finding); });
             var detailLayout = rows[3].GetComponent<LayoutElement>(); detailLayout.minHeight = detailLayout.preferredHeight = 44;
-            FocusObservation(selectedObservation, false);
             SetAction(primary, "View moment", () => FocusObservation(selectedObservation!, true));
             SetAction(secondary, "Inspect original", () => OpenEvidence(selectedObservation!));
         }
@@ -88,11 +94,12 @@ namespace Physio.Viewer
             var findings = showObservations ? Enumerable.Empty<JObject>() : ((JArray)manifest!["findings"]!).OfType<JObject>();
             var choices = findings.Select(item => ((string)item["label"]!, (Action)(() =>
             { finding = item; detailPage = 0; Show(Screen.Finding); }))).ToList();
-            choices.AddRange(manifest!["features"]!.Select(feature => ($"{feature["name"]} · {feature["status"]}", (Action)(() =>
-            { featureDetail = InsightPresentation.FeatureDetail((string)feature["name"]!, (string?)feature["detail"]); detailPage = 0; Show(Screen.Feature); }))));
+            if (!showObservations && choices.Count == 0)
+                body.text += "\nNo supported findings in this result.";
             List(choices.ToArray(), 3);
-            SetAction(primary, session?.TestType == "barefoot" ? "Foot assessment" : "Motion microscope", () => Show(session?.TestType == "barefoot" ? Screen.Foot : Screen.Microscope));
-            SetAction(secondary, showObservations ? "Assessment" : "Observations", () => { showObservations = !showObservations; Show(Screen.Review); });
+            SetAction(primary, session?.TestType == "barefoot" ? "Foot assessment" : "Motion microscope",
+                () => Show(session?.TestType == "barefoot" ? Screen.Foot : Screen.Microscope));
+            SetAction(secondary, "", null);
         }
     }
 }

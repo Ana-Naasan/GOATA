@@ -1,11 +1,59 @@
 # Codex session handoff
 
-**Last updated:** September 27, 2026. Walking review and source-linked estimated
-insights are implemented at source commit `bbf4e26` on `codex/walking-insights` in
-`/Users/baderasadi/.codex/worktrees/hamza-quest/HTH`, based on `main` at `3bad1a7`
-([PR #11](https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp/pull/11), including
-Mohammad's PR #10). M1 and clinical evaluation remain incomplete: no fresh Quest
-participant recording has completed capture → GPU → loaded saved review.
+**Last updated:** September 27, 2026. The UI redesign **0.3.0 / Android code 7**
+is built, installed wirelessly and cold-launched on Quest 3. Source is on
+`codex/hci-quest-ui` in `/Users/baderasadi/.codex/worktrees/hci-quest-ui/HTH`, based
+on `main` at `1a9f9e3`. M1 and clinical evaluation remain incomplete: no new
+participant capture → GPU → loaded saved review was verified during this UI work.
+
+## UI redesign and wireless deployment
+
+The user authorized the UI/workflow rebuild, then installation and remote push.
+The source baseline is the latest available checked-in checkout above; the prior
+on-device 0.2.4 package was backed up locally before updating to 0.3.0.
+
+- One Meta UI Set workspace, compact replay HUD, consistent colours, bounded
+  movable uniformly scaled panels, source-linked anatomical highlighting and
+  grounded initial replay at 1x reconstructed source scale.
+- Explicit camera framing before countdown; elapsed capture/processing clocks;
+  animated ELK/RTK/Walking movement dropdowns hidden during framing/recording and
+  during supplemental microscope steady holds. Patient/test/view context remains.
+- Optional stationary Moon facility with Earth, Kenney assets and a passthrough
+  resume gate before capture. Play mode adds presentation-only head nudges and
+  transient tomato splats. Real-room wall splats remain incomplete.
+- Physical size is still estimated reconstruction scale, not measured height.
+  Source recordings, metrics, original-frame mappings and clinical scope remain.
+
+Unity **6000.0.66f2**, Meta Interaction SDK **85.0.0**, Android API 34/ARM64:
+`FixtureBuild.Build` exited 0 with `Build Finished, Result: Success`.
+APK: **86,281,822 bytes**, SHA-256
+`37cfc5b99c5a3106f06dd64e92663ee122902dc4b14fa791adc2f98af4e7759e`.
+`adb -s 10.198.154.65:5555 install -r quest/Builds/PhysioFixture.apk` succeeded on
+Quest 3 serial `2G97C5ZH95010L`. Installed APK hash matches, and all **257** saved
+app files matched their pre-install hashes before launch. No app data was cleared.
+`am start -W` reported `Status: ok`, `LaunchState: COLD`; startup PID 26421 reached
+tracked-head placement and `PHYSIO_VIEWER_READY` without a managed exception in
+the sampled log. This verifies installation/startup, not wearer acceptance.
+
+C# checks passed: Replay **136**, Importer **174**, Capture **104**, Workflow
+**673**, UI evidence **33**, Spatial capture **33**, authored Demo **19,827**.
+General/C# review and the scoped security/asset-publication review found no
+remaining blocker. `pip-audit` found no known vulnerabilities; C#/Markdown
+whitespace checks passed. Unity's generated scene is retained for opening the
+updated interface; the unrelated TMP serialization migration was restored.
+
+Build and deployment proof, prior APK and local screenshot are outside Git at
+`/Users/baderasadi/Library/Caches/HTH/hci-ui-deploy-030/`. Imported asset provenance
+is in `quest/Assets/Physio/Art/{Moon,Tomato}/ASSET_SOURCES.md`; no participant media,
+APK or credentials are committed. Main code changes are the scene builder,
+capture presentation/recorder, replay placement/insights/HUD, movement examples,
+panel bounds and environment/play interaction components.
+
+Next: wear the headset and accept panel size/reach, camera framing, saved replay
+timeline, grounded scaling, Moon/passthrough transition and Play controls. New
+captures require the separately configured authenticated processing service;
+this deployment updated the Quest client only. Historical milestones below are
+retained as evidence, not new verification of this release.
 
 ## Mohammad's persistent inference experiment review
 

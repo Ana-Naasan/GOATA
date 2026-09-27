@@ -15,59 +15,88 @@ namespace Physio.Viewer
         [SerializeField] private TMP_Text guidanceContext = null!;
         [SerializeField] private TMP_Text guidanceSteps = null!;
         [SerializeField] private TMP_Text guidanceStatus = null!;
-        [SerializeField] private GameObject recordDock = null!;
+        [SerializeField] private Button movementButton = null!;
+        [SerializeField] private TMP_Text movementButtonLabel = null!;
+        [SerializeField] private GameObject movementExampleRoot = null!;
+        [SerializeField] private MovementExample movementExample = null!;
+        [SerializeField] private RawImage cameraPreview = null!;
+        [SerializeField] private GameObject cameraPreviewFrame = null!;
+        [SerializeField] private TMP_Text cameraPreviewCaption = null!;
+        [SerializeField] private RectTransform guidanceCanvas = null!;
+        [SerializeField] private RectTransform guidanceBackplate = null!;
+        [SerializeField] private Transform guidanceHandle = null!;
         [SerializeField] private Button recordButton = null!;
         [SerializeField] private TMP_Text recordLabel = null!;
         [SerializeField] private TMP_Text recordTime = null!;
         [SerializeField] private Button retakeButton = null!;
-        [SerializeField] private Button workspaceButton = null!;
-        private bool visible;
-        private bool canRecenter;
-        private float openedAt;
+        [SerializeField] private TMP_Text retakeLabel = null!;
+        [SerializeField] private Button returnButton = null!;
+        private bool placed;
+        private bool exampleOpen;
 
         private void Start()
         {
             recordButton.onClick.AddListener(workflow.ActivateCaptureControl);
-            retakeButton.onClick.AddListener(workflow.RetakeLastView);
-            workspaceButton.onClick.AddListener(workflow.OpenOptions);
+            retakeButton.onClick.AddListener(workflow.RetakeOrClosePreview);
+            returnButton.onClick.AddListener(workflow.LeaveCapture);
+            movementButton.onClick.AddListener(ToggleExample);
             recordLabel.richText = true;
             SetVisible(false);
         }
 
         public void SetVisible(bool value)
         {
-            if (value && !visible) { PlaceSurfaces(); openedAt = Time.unscaledTime; }
-            visible = value;
+            if (value && !placed) PlaceSurfaces();
+            if (!value) exampleOpen = false;
             guidanceRoot.SetActive(value);
-            recordDock.SetActive(value);
         }
 
-        public void Render(string title, string context, string steps, string status, string action, string time, bool canAct, bool canRetake, bool canLeave)
+        public void Render(string test, string title, string context, string steps, string status, string action, string time,
+            Texture? cameraFrame, bool recording, bool previewing, bool preparing, bool canAct, bool canRetake, bool canLeave)
         {
+            var exampleLocked = string.IsNullOrEmpty(test) || test == "barefoot" || previewing || preparing || recording;
+            if (exampleLocked) exampleOpen = false;
             SetText(guidanceTitle, title); SetText(guidanceContext, context); SetText(guidanceSteps, steps);
             SetText(guidanceStatus, status);
+            movementExample.SetTest(test);
+            movementButton.gameObject.SetActive(!exampleLocked);
+            movementExampleRoot.SetActive(exampleOpen && !exampleLocked);
+            SetText(movementButtonLabel, exampleOpen ? "Hide movement example ▴" : "How the movement looks ▾");
+            guidanceContext.gameObject.SetActive(!recording);
+            guidanceSteps.gameObject.SetActive(!recording);
+            returnButton.transform.parent.gameObject.SetActive(!recording);
             var glyph = action == "Stop recording" ? "<color=#FF5048>■</color> " : action == "Record" ? "<color=#FF5048>●</color> " : "";
             SetText(recordLabel, glyph + action); SetText(recordTime, time);
-            canRecenter = canLeave;
+            cameraPreview.texture = cameraFrame;
+            if (cameraFrame != null && cameraFrame.height > 0)
+                cameraPreview.GetComponent<AspectRatioFitter>().aspectRatio = (float)cameraFrame.width / cameraFrame.height;
+            var showFrame = cameraFrame != null && !exampleOpen;
+            cameraPreviewFrame.SetActive(showFrame);
+            cameraPreviewCaption.gameObject.SetActive(showFrame && !recording);
+            var previewLayout = cameraPreviewFrame.GetComponent<LayoutElement>();
+            previewLayout.minHeight = previewLayout.preferredHeight = recording ? 140f : 260f;
+            SetText(cameraPreviewCaption, "Recorded camera view · include the full required region");
+            var height = recording ? 500f : exampleOpen ? 820f : showFrame ? 888f : 588f;
+            if (Mathf.Abs(guidanceCanvas.rect.height - height) > .5f)
+            {
+                guidanceCanvas.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, height);
+                guidanceBackplate.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, height);
+                guidanceHandle.localPosition = new Vector3(0f, -height * .0005f - .022f, -.018f);
+            }
             recordButton.interactable = canAct;
-            retakeButton.gameObject.SetActive(canRetake);
-            retakeButton.interactable = canRetake;
-            workspaceButton.interactable = canLeave;
+            SetText(retakeLabel, previewing ? "Close camera" : "Retake last view");
+            retakeButton.gameObject.SetActive(previewing || canRetake);
+            retakeButton.interactable = previewing || canRetake;
+            returnButton.interactable = canLeave;
         }
 
-        private void LateUpdate()
-        {
-            if (!visible || !canRecenter || head == null || Time.unscaledTime - openedAt < .5f) return;
-            // Between viewpoints only, retrieve controls that are behind the wearer. Visible targets stay fixed.
-            var direction = (recordDock.transform.position - head.position).normalized;
-            if (Vector3.Dot(head.forward, direction) < .2f) PlaceSurfaces();
-        }
+        private void ToggleExample() => exampleOpen = !exampleOpen;
 
         public void PlaceSurfaces()
         {
             if (head == null) return;
-            Place(guidanceRoot.transform, new Vector3(-.52f, .08f, 1.15f));
-            Place(recordDock.transform, new Vector3(0f, -.38f, .85f));
+            Place(guidanceRoot.transform, new Vector3(-.73f, -.12f, 1.45f));
+            placed = true;
         }
 
         private void Place(Transform target, Vector3 offset)
@@ -79,8 +108,9 @@ namespace Physio.Viewer
         private void OnDestroy()
         {
             if (recordButton != null) recordButton.onClick.RemoveListener(workflow.ActivateCaptureControl);
-            if (retakeButton != null) retakeButton.onClick.RemoveListener(workflow.RetakeLastView);
-            if (workspaceButton != null) workspaceButton.onClick.RemoveListener(workflow.OpenOptions);
+            if (retakeButton != null) retakeButton.onClick.RemoveListener(workflow.RetakeOrClosePreview);
+            if (returnButton != null) returnButton.onClick.RemoveListener(workflow.LeaveCapture);
+            if (movementButton != null) movementButton.onClick.RemoveListener(ToggleExample);
         }
     }
 }

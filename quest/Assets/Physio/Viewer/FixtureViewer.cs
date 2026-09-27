@@ -29,11 +29,14 @@ namespace Physio.Viewer
         [SerializeField] private Material? jointMaterial;
 
         [Header("Placement")]
-        [SerializeField] private Vector3 viewerOffset = new(0.25f, -0.6f, 0.75f);
+        [SerializeField] private Vector3 viewerOffset = new(0.55f, 0f, 1.65f);
         [SerializeField] private Vector3 panelOffset = new(-0.35f, -0.12f, 0.8f);
-        [SerializeField] private float initialDisplayScale = 0.4f;
+        [SerializeField] private float initialDisplayScale = 1f;
 
         private ReplayData? replay;
+        private float firstSurfaceBottom;
+        private float playNudgeStarted = -10f;
+        private float playNudgeSide = 1f;
         private ReplayClock? clock;
         private Mesh? mesh;
         private Vector3[]? meshVertices;
@@ -101,6 +104,7 @@ namespace Physio.Viewer
                 clock = clock.Advance(Time.deltaTime);
                 RenderCurrentFrame(force: false);
             }
+            if (Time.unscaledTime - playNudgeStarted < 1.15f) RenderCurrentFrame(force: true);
 
             replayPanel?.ApplyState(BuildPanelState());
         }
@@ -170,13 +174,92 @@ namespace Physio.Viewer
         public void CycleSpeed()
         {
             if (!hasInputFocus || clock == null) return;
-            speedIndex = (speedIndex + 1) % SupportedSpeeds.Length;
-            clock = clock.SetSpeed(SupportedSpeeds[speedIndex]);
+            SetPlaybackSpeed((speedIndex + 1) % SupportedSpeeds.Length);
+        }
+
+        public void SetPlaybackSpeed(int index)
+        {
+            if (!hasInputFocus || clock == null || index < 0 || index >= SupportedSpeeds.Length) return;
+            speedIndex = index;
+            clock = clock.SetSpeed(SupportedSpeeds[index]);
             LogAction($"speed_{clock.Speed:0.##}x");
         }
 
         public void ScaleReplayDown() => ScaleReplay(0.9f);
         public void ScaleReplayUp() => ScaleReplay(1.1f);
+        public void ToggleQuietRoom()
+        {
+            if (!hasInputFocus || replayDisplayRoot == null || !replayDisplayRoot.gameObject.activeInHierarchy) return;
+            GetComponent<ReplayEnvironment>()?.Toggle();
+        }
+        public bool ReplayIsVisible => replayDisplayRoot != null && replayDisplayRoot.gameObject.activeInHierarchy;
+        public Transform? ReplayRoot => replayDisplayRoot;
+        public bool CanEnterPlayMode => ReplayIsVisible && !findingHighlightVisible && regionLabel.Length == 0;
+        public Vector3 ReplayForward => replayDisplayRoot != null ? replayDisplayRoot.forward : Vector3.forward;
+
+        public bool IsReplayCollider(Collider other) => replayDisplayRoot != null &&
+            (other.transform == replayDisplayRoot || other.transform.IsChildOf(replayDisplayRoot));
+        public bool TryReplaySurfacePoint(Vector3 worldImpact, out Vector3 point, out Vector3 normal)
+        {
+            point = normal = Vector3.zero;
+            if (replayDisplayRoot == null || mesh == null || meshVertices == null || meshVertices.Length == 0 ||
+                clock?.Sample.IsObserved != true) return false;
+            var closest = float.PositiveInfinity;
+            var index = -1;
+            for (var i = 0; i < meshVertices.Length; i++)
+            {
+                var candidate = replayDisplayRoot.TransformPoint(meshVertices[i]);
+                var distance = (candidate - worldImpact).sqrMagnitude;
+                if (distance >= closest) continue;
+                closest = distance; index = i; point = candidate;
+            }
+            if (index < 0) return false;
+            normal = replayDisplayRoot.TransformDirection(mesh.normals[index]).normalized;
+            return true;
+        }
+
+        public bool TryHeadWorld(out Vector3 point)
+        {
+            point = default;
+            if (replay == null || clock?.Sample.IsObserved != true || replayDisplayRoot == null) return false;
+            for (var i = 0; i < replay.JointCount; i++)
+                if (replay.JointNameAt(i).IndexOf("head", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                    replay.IsJointValid(clock.Sample.Index, i))
+                {
+                    point = replayDisplayRoot.TransformPoint(ToUnity(replay.JointAt(clock.Sample.Index, i)));
+                    return true;
+                }
+            if (interactionCollider == null) return false;
+            var bounds = interactionCollider.bounds;
+            point = new Vector3(bounds.center.x, bounds.max.y - .13f, bounds.center.z);
+            return true;
+        }
+
+        public void TriggerPlayNudge(Vector3 incoming)
+        {
+            if (!HasInputFocus || !CanEnterPlayMode ||
+                GetComponent<ReplayPlayInteractions>()?.IsPlayMode != true || clock?.Sample.IsObserved != true) return;
+            playNudgeStarted = Time.unscaledTime;
+            playNudgeSide = incoming.x < 0 ? -1f : 1f;
+            RenderCurrentFrame(force: true);
+        }
+
+        public void ClearPlayNudge()
+        {
+            playNudgeStarted = -10f;
+            RenderCurrentFrame(force: true);
+        }
+
+        private Vector3 WithPlayNudge(Vector3 point, Vector3 neckPivot)
+        {
+            if (neckPivot == Vector3.zero) return point;
+            var age = Time.unscaledTime - playNudgeStarted;
+            if (age < 0 || age >= 1.15f) return point;
+            var weight = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((point.y - neckPivot.y) / .19f));
+            var angle = 13f * Mathf.Exp(-4f * age) * Mathf.Sin(age * 19f);
+            var rotation = Quaternion.Euler(angle * .65f, 0f, angle * playNudgeSide);
+            return Vector3.Lerp(point, neckPivot + rotation * (point - neckPivot), weight);
+        }
 
         public void ToggleSkeletonVisibility()
         {
@@ -274,12 +357,16 @@ namespace Physio.Viewer
             if (rig != null && rig.centerEyeAnchor != null)
             {
                 var yaw = Quaternion.Euler(0f, rig.centerEyeAnchor.eulerAngles.y, 0f);
-                replayDisplayRoot.position = rig.centerEyeAnchor.position + yaw * viewerOffset;
+                var ahead = rig.centerEyeAnchor.position + yaw * viewerOffset;
+                var floorY = rig.trackingSpace.position.y;
+                replayDisplayRoot.position = new Vector3(ahead.x,
+                    floorY - firstSurfaceBottom * replayDisplayRoot.localScale.y, ahead.z);
                 replayDisplayRoot.rotation = yaw;
                 return;
             }
 
-            replayDisplayRoot.position = new Vector3(0f, 1.1f, 0.75f);
+            replayDisplayRoot.position = new Vector3(.55f,
+                -firstSurfaceBottom * replayDisplayRoot.localScale.y, 1.65f);
             replayDisplayRoot.rotation = Quaternion.identity;
         }
 
@@ -442,12 +529,17 @@ namespace Physio.Viewer
             lastRenderedObserved = observed;
 
             var localBounds = new Bounds(Vector3.zero, new Vector3(0.35f, 0.5f, 0.35f));
+            var neckPivot = Vector3.zero;
+            for (var i = 0; observed && i < replay.JointCount; i++)
+                if (replay.JointNameAt(i).IndexOf("head", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                    replay.IsJointValid(sample.Index, i))
+                { neckPivot = ToUnity(replay.JointAt(sample.Index, i)) - Vector3.up * .16f; break; }
             if (meshObject != null) meshObject.SetActive(observed);
             if (observed)
             {
                 for (var i = 0; i < meshVertices.Length; i++)
                 {
-                    meshVertices[i] = ToUnity(replay.VertexAt(sample.Index, i));
+                    meshVertices[i] = WithPlayNudge(ToUnity(replay.VertexAt(sample.Index, i)), neckPivot);
                     if (i == 0) localBounds = new Bounds(meshVertices[i], Vector3.zero);
                     else localBounds.Encapsulate(meshVertices[i]);
                 }
@@ -461,7 +553,7 @@ namespace Physio.Viewer
                 var valid = skeletonVisible && observed && replay.IsJointValid(sample.Index, i);
                 jointObjects[i].SetActive(valid);
                 if (!valid) continue;
-                var jointPosition = ToUnity(replay.JointAt(sample.Index, i));
+                var jointPosition = WithPlayNudge(ToUnity(replay.JointAt(sample.Index, i)), neckPivot);
                 jointObjects[i].transform.localPosition = jointPosition;
                 localBounds.Encapsulate(jointPosition);
             }
@@ -475,13 +567,14 @@ namespace Physio.Viewer
                 var bone = boneLines[boneIndex++];
                 bone.gameObject.SetActive(valid);
                 if (!valid) continue;
-                bone.SetPosition(0, ToUnity(replay.JointAt(sample.Index, parent)));
-                bone.SetPosition(1, ToUnity(replay.JointAt(sample.Index, i)));
+                bone.SetPosition(0, WithPlayNudge(ToUnity(replay.JointAt(sample.Index, parent)), neckPivot));
+                bone.SetPosition(1, WithPlayNudge(ToUnity(replay.JointAt(sample.Index, i)), neckPivot));
             }
 
             UpdateRegionMarker();
             UpdateInteractionBounds(localBounds);
-            Debug.Log($"PHYSIO_VIEWER_FRAME: frame_index={sample.Index} source_frame_id={sample.SourceFrameId} source_time={sample.SourceTime:0.###} observed={observed} playing={clock.IsPlaying} speed={clock.Speed:0.##} direction={clock.Direction}");
+            if (Time.unscaledTime - playNudgeStarted >= 1.15f)
+                Debug.Log($"PHYSIO_VIEWER_FRAME: frame_index={sample.Index} source_frame_id={sample.SourceFrameId} source_time={sample.SourceTime:0.###} observed={observed} playing={clock.IsPlaying} speed={clock.Speed:0.##} direction={clock.Direction}");
         }
 
         private void UpdateInteractionBounds(Bounds localBounds)
@@ -509,6 +602,7 @@ namespace Physio.Viewer
             var current = replayDisplayRoot.localScale.x;
             var target = Mathf.Clamp(current * multiplier, 0.2f, 1.2f);
             replayDisplayRoot.localScale = Vector3.one * target;
+            MaintainGroundedReplay();
             LogAction($"scale_replay_{target:0.###}");
         }
 
@@ -717,8 +811,19 @@ namespace Physio.Viewer
             var handMenuPressed = IsHandMenuPressedEdge();
             if (OVRInput.GetDown(OVRInput.Button.Start) || handMenuPressed)
             {
+                var workflow = replayPanel?.GetComponent<WorkflowPanel>();
+                if (workflow != null && workflow.IsCaptureScreen)
+                {
+                    workflow.BringCaptureControlsToView();
+                    return;
+                }
+                if (workflow != null && workflow.IsReplayScreen)
+                {
+                    replayPanel?.BringTimelineToView();
+                    return;
+                }
                 BringPanelToView();
-                replayPanel?.GetComponent<WorkflowPanel>()?.OpenOptions();
+                workflow?.OpenOptions();
             }
         }
 
