@@ -24,7 +24,9 @@ class IncrementalSelection:
     def _advance(self, final=False):
         a, b = len(self.observations), len(self.samples)
         origin, last = self.times[0], self.times[-1]
-        while origin+Fraction(self.next_obs*10**9, self.hz) <= last:
+        # Only EOS may include a target rounded up to 1ns beyond the final PTS.
+        limit = last + (1 if final else 0)
+        while origin+Fraction(self.next_obs*10**9, self.hz) <= limit:
             selected = self._nearest(origin+Fraction(self.next_obs*10**9, self.hz))
             if not self.observations or self.observations[-1] != selected:
                 self.observations.append(selected)

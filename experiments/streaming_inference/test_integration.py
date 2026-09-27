@@ -18,20 +18,20 @@ import numpy as np
 
 import experiment
 from experiment import Trace, validate_fixture, make_plan
-from stream_core import PacedProducer, GlobalPairs
+from stream_core import IncrementalSelection, PacedProducer, GlobalPairs
 from inference import VO
 
 ROOT=Path(__file__).resolve().parent
 
 
-def fixture():
+def fixture(fps=30):
     origin=Fraction(3,1)
-    rows=[dict(frame_id=i,pts_ns=str(round((origin+Fraction(i,30))*10**9)),image_valid=True,
-               original_pts=str(90+i),original_time_base='1/30',encoded_pts_seconds=str(Fraction(i%60,30))) for i in range(240)]
+    rows=[dict(frame_id=i,pts_ns=str(round((origin+Fraction(i,fps))*10**9)),image_valid=True,
+               original_pts=str(3*fps+i),original_time_base=f'1/{fps}',encoded_pts_seconds=str(Fraction(i%(2*fps),fps))) for i in range(8*fps)]
     return dict(schema='stream-fixture-1',take_id=str(uuid.uuid4()),variant='960-15',width=960,height=540,hz=15,
-                K=[[660.5,0,480.],[0,660.5,270.],[0,0,1]],source_duration_s=8,source_frame_count=240,
+                K=[[660.5,0,480.],[0,660.5,270.],[0,0,1]],source_duration_s=8,source_frame_count=8*fps,
                 original_origin_seconds='3',origin_pts_ns='3000000000',calibration_basis='stand-in only',
-                chunks=[dict(index=i,path=f'chunk-{i}.mp4',release_offset_s=2*(i+1),frames=rows[i*60:(i+1)*60]) for i in range(4)])
+                chunks=[dict(index=i,path=f'chunk-{i}.mp4',release_offset_s=2*(i+1),frames=rows[i*2*fps:(i+1)*2*fps]) for i in range(4)])
 
 
 class MetadataTests(unittest.TestCase):
@@ -51,6 +51,21 @@ class MetadataTests(unittest.TestCase):
         validate_fixture(m)
         m['hz']=10
         with self.assertRaises(ValueError): validate_fixture(m)
+
+    def test_eight_second_fifteen_fps_plan_preserves_final_source_frame(self):
+        m = fixture(fps=15)
+        validate_fixture(m)
+        selector = IncrementalSelection(15)
+        for chunk in m['chunks']:
+            selector.append(chunk['frames'])
+        selector.finish()
+        plan, sidecar = make_plan(m, selector, [])
+        self.assertEqual(plan['sampling']['observation_indices'], list(range(120)))
+        self.assertEqual(plan['sampling']['grid_to_observation'][-1], 119)
+        self.assertEqual(plan['selected_indices'][-1], 119)
+        self.assertEqual(plan['frame_mapping'][-1]['source_frame_id'], 119)
+        self.assertEqual(plan['frame_mapping'][-1]['source_pts_ns'], '10933333333')
+        self.assertEqual(sidecar['frames'], [row for chunk in m['chunks'] for row in chunk['frames']])
 
     def test_trace_cpu_only_span_failure_and_threads(self):
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp:

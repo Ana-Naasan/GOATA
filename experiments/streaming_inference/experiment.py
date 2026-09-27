@@ -79,8 +79,11 @@ def make_plan(manifest,selector,availability):
     plan=plan_input(sidecar)
     actual=selector.result(); times=selector.times; hz=selector.hz
     # Independent whole-take reference, evaluated ONLY after EOS; no image/feature cache.
+    duration=times[-1]-times[0]
+    count=duration*hz//10**9+1
+    if abs(Fraction(count*10**9,hz)-duration)<=1: count+=1
     obs=sorted({min(range(len(times)),key=lambda j:(abs(times[j]-times[0]-Fraction(i*10**9,hz)),j))
-                for i in range((times[-1]-times[0])*hz//10**9+1)})
+                for i in range(count)})
     hold=[max(0,bisect_right([times[j] for j in obs],times[0]+round(Fraction(i*10**9,30)))-1)
           for i in range(len(plan['selected_indices']))]
     samples=list(range(0,len(hold),8))

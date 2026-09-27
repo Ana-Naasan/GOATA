@@ -28,7 +28,7 @@ def offline(rows, hz):
     times = [int(r['pts_ns']) for r in rows]
     nearest = lambda t: min(range(len(times)), key=lambda i: (abs(times[i]-t), i))
     obs = sorted({nearest(times[0]+Fraction(i*10**9, hz))
-                  for i in range((times[-1]-times[0])*hz//10**9+1)})
+                  for i in range((times[-1]-times[0]+1)*hz//10**9+1)})
     n = (times[-1]-times[0])*30//10**9+1
     if abs(Fraction(n*10**9, 30)-(times[-1]-times[0])) <= 1:
         n += 1
@@ -73,6 +73,23 @@ class SelectionTests(unittest.TestCase):
         s.append(frames([0, 100_000_000, 200_000_000]))
         s.finish()
         self.assertEqual(s.result()['observation_indices'], [0, 1, 2])
+
+    def test_rounded_observation_endpoint_waits_for_eos(self):
+        for hz, last in ((15, 66_666_666), (10, 99_999_999)):
+            with self.subTest(hz=hz, last=last):
+                s = IncrementalSelection(hz)
+                self.assertEqual(s.append(frames([0, last]))[0], [0])
+                self.assertEqual(s.finish()[0], [1])
+                self.assertEqual(s.result()['observation_indices'], [0, 1])
+                self.assertEqual(s.result()['grid_to_observation'][-1], 1)
+
+    def test_eos_does_not_include_observation_more_than_one_ns_past_endpoint(self):
+        for hz, last in ((15, 66_666_665), (10, 99_999_998)):
+            with self.subTest(hz=hz, last=last):
+                s = IncrementalSelection(hz)
+                self.assertEqual(s.append(frames([0, last]))[0], [0])
+                self.assertEqual(s.finish()[0], [])
+                self.assertEqual(s.result()['observation_indices'], [0])
 
     def test_invalid_frames_and_finalization(self):
         for times in ([0, 0], [10, 9], [0, 100_000_001]):
