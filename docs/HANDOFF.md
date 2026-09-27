@@ -7,6 +7,98 @@ insights are implemented at source commit `bbf4e26` on `codex/walking-insights` 
 Mohammad's PR #10). M1 and clinical evaluation remain incomplete: no fresh Quest
 participant recording has completed capture → GPU → loaded saved review.
 
+## Mohammad's persistent inference experiment review
+
+Reviewed Mohammad's `7db2d4c` against `main` at `554d4b7` on
+`codex/bader-ml-optimization-review`. Integration fix `2a24986` preserves the
+original commit and changes only the experiment: supplied, unverified fixture
+calibration remains `estimated`, and rounded source-clock endpoints retain the
+last eligible 15 Hz observation. Regression tests failed before both fixes and
+passed afterward. Python, ML runtime, general and security reviews found no
+remaining blocking issue within the documented public-fixture experiment.
+
+This adds an offline benchmark, **not production acceleration**. The service
+still starts fresh inference processes. It does not enable streaming or establish
+Quest turnaround, clinical accuracy or numerical equivalence between persistent
+and fresh processes. The benchmark covers four independent two-second public
+WHAM takes, with all five models retained on CUDA and fresh tracking state per
+take. Preserve the original historical measurements in `rtx3070-fp32.json`.
+
+Verification uses Python **3.11.10** and the locked microscope dependencies:
+
+```sh
+uv sync --locked --extra microscope --python /Users/baderasadi/Documents/ChatGPT/HTH/.venv/bin/python
+.venv/bin/python -m pytest --cov=processing --cov-branch --cov-report=term-missing -q
+PHYSIO_ULTRALYTICS_SOURCE=/Users/baderasadi/Library/Caches/HTH/ml-optimization-review-7db2d4c/ultralytics PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$PWD" .venv/bin/python -m unittest discover -s experiments/persistent_inference -v
+.venv/bin/ruff check processing tests
+.venv/bin/pip-audit --progress-spinner off
+.venv/bin/python -m processing.contracts validate tests/contracts/fixtures
+```
+
+- Processing: **398 passed, 177 subtests passed**, one existing warning;
+  **90.20%** combined line/branch coverage.
+- Experiment: **44 tests passed, no skips**, including hash-checked Ultralytics
+  8.2.42 source checks. CPU coverage is **68%** across all eight experiment modules,
+  **84%** excluding CUDA adapter/model wrappers (`adapter.py`, `models.py`). Real
+  GPU execution supplements those exclusions; it is not a GPU coverage measure.
+- Processing/tests Ruff, dependency audit, contract fixtures, all 18 experiment
+  checksums and whitespace validation passed. Experiment source retains its
+  existing Ruff style/import diagnostics; no experiment-wide lint pass is claimed.
+- An initial Python **3.13.9** run had one failure:
+  `test_json_rejects_invalid_utf8_and_deep_nesting`. The same failure reproduced
+  on unchanged `main` at `554d4b7`; the merge does not fix that separate runtime
+  compatibility issue. Use the verified 3.11 environment for this checkpoint.
+
+Fresh GPU verification of original `7db2d4c` completed on the existing RTX 3070:
+**36.178 seconds** for the persistent process versus **84.419 seconds** total
+for four fresh processes; subsequent takes took **4.896 / 4.993 / 5.060 seconds**.
+All 64 native artifact sizes/hashes across eight outputs, finite geometry,
+dimensions, source mappings and model counts passed independent verification.
+The first persistent/cold 3D pair matched exactly; later pairs differed alongside
+VO estimates, so full numerical equivalence remains unproven.
+
+The first corrected-code GPU attempt failed honestly at pose-model construction
+with CUDA OOM while another benchmark occupied 6,384 MiB. It completed zero takes,
+applied no fallback and is excluded from performance results. Existing workloads
+were left running. After that workload exited, corrected source **`2a24986`**
+completed the same full benchmark in `output/resident-reviewed-002`:
+
+- Persistent process: **36.427 seconds**; four fresh processes: **85.100 seconds**
+  total, approximately **2.34 times** the persistent duration.
+- Subsequent takes: **4.942 / 5.033 / 5.075 seconds**. First output after process
+  launch: **20.454 seconds**. Shared input splitting: **4.491 seconds**, excluded
+  from the process comparison. Network, preview and Quest loading are excluded.
+- Peak PyTorch allocation/reservation: **6,190,825,984 / 6,423,576,576 bytes**;
+  these are allocator measurements, not whole-device memory or replica capacity.
+- All **64** corrected native artifacts passed size/hash, finite geometry,
+  topology and original take/frame/time mapping checks. All eight outputs report
+  estimated intrinsics. Each model was constructed once and used four times;
+  all 12 recorded code hashes matched the frozen runtime. Inputs, assets, tracks,
+  boxes and keypoints matched the fresh-process controls. Later 3D outputs still
+  differ alongside VO; this run does not establish numerical equivalence.
+- The existing image identity is
+  `sha256:66db73a15b803aa99aa47f8929ec2acd7e5d30ee84332dad8c1b62e254beeddc`,
+  GVHMR `ee960bb6e2ea2d381aa97f08e9b71ef320b624b1`. All 49 frozen source files
+  were checked against commit `2a24986`. No model or dependency was upgraded.
+
+Both successful runs used the bounded, non-networked Docker command in
+`processing/reconstruction/GPU_SETUP.md`, with the matching frozen source mounts
+and isolated output path. The final in-container command was:
+
+```sh
+python /experiment/benchmark.py --video /input/drone_video.mp4 --calibration /input/drone_calib.txt --output /output/resident-reviewed-002 --residency resident --timeout-s 900
+```
+
+Proof logs and reports are outside Git:
+`/Users/baderasadi/Library/Caches/HTH/ml-optimization-review-7db2d4c/`.
+Remote source, inputs and outputs are isolated under
+`/home/bader/physio-reconstruction/ml-merge-review.Z1xzK1/`.
+No participant recording, checkpoint, credential or generated media was committed.
+
+Next: establish repeatable numerical comparison before promoting this runner
+into the processing service. The fresh Quest capture-to-loaded-review and clinical
+validation gaps below remain open.
+
 ## Walking and insights checkpoint
 
 The user approved the plan in `docs/INSIGHTS_PLAN.md` and replaced **new** barefoot
