@@ -14,7 +14,11 @@ class BenchmarkTests(unittest.TestCase):
             with self.subTest(residency=residency):
                 self.check_serial_processes(residency)
 
-    def check_serial_processes(self, residency):
+    def test_completed_resident_fit_requires_all_worker_evidence(self):
+        self.check_serial_processes('resident', fit_evidence=True)
+        self.check_serial_processes('cpu-offload', fit_evidence=True)
+
+    def check_serial_processes(self, residency, fit_evidence=False):
         with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as folder:
             root = Path(folder)
             calls = []
@@ -27,7 +31,8 @@ class BenchmarkTests(unittest.TestCase):
                     start = command.index('--indices')+1
                     stop = command.index('--launched-ns')
                     indices = [int(x) for x in command[start:stop]]
-                    (output/'result.json').write_text(json.dumps({'segments': [dict(seconds=1, output_since_launch_s=2) for i in indices]}))
+                    (output/'result.json').write_text(json.dumps({'status': 'complete', 'all_resident_fit_proven': fit_evidence,
+                        'segments': [dict(seconds=1, output_since_launch_s=2) for i in indices]}))
                 return 1
             args = SimpleNamespace(video=root/'video', calibration=root/'calib', output=root/'result', timeout_s=30,
                                    residency=residency)
@@ -40,7 +45,7 @@ class BenchmarkTests(unittest.TestCase):
             result = json.loads((args.output/'benchmark.json').read_text())
             self.assertEqual(result['persistent_process_wall_s'],1)
             self.assertEqual(result['cold_process_wall_sum_s'],4)
-            self.assertFalse(result['all_resident_fit_proven'])
+            self.assertEqual(result['all_resident_fit_proven'], fit_evidence and residency == 'resident')
             self.assertEqual(result['residency_mode'], residency)
             from lifecycle import RESIDENCY_MODES
             self.assertEqual(result['lifecycle'], RESIDENCY_MODES[residency])

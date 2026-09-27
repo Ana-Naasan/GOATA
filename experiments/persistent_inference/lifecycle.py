@@ -3,10 +3,23 @@ from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 MODEL_NAMES = frozenset(('detector', 'pose', 'features', 'gvhmr', 'body'))
+PRECISIONS = ('fp32', 'amp-fp16', 'weights-fp16')
+BATCH_SIZES = (2, 4, 8)
 RESIDENCY_MODES = {
     'resident': 'GPU-resident weights; fresh predictor/tracker per take',
     'cpu-offload': 'CPU-retained sequential offload; fresh predictor/tracker per take',
 }
+
+
+def validate_controls(precision='fp32', variant='960-15', batch_size=2, vo_seed=0):
+    from fast import VARIANTS
+    if precision not in PRECISIONS or variant not in VARIANTS:
+        raise ValueError('unsupported precision or variant')
+    if type(batch_size) is not int or batch_size not in BATCH_SIZES:
+        raise ValueError('batch size must be 2, 4 or 8')
+    if type(vo_seed) is not int or vo_seed < 0:
+        raise ValueError('VO seed must be a nonnegative integer')
+    return dict(precision=precision, variant=variant, batch_size=batch_size, vo_seed=vo_seed)
 
 
 def reset_detector(yolo, callbacks):
@@ -137,11 +150,12 @@ class Counters:
             raise ValueError('invalid counter increment')
         self.values[name] = self.values.get(name, 0) + count
 
-    def finish(self, observations, grid):
+    def finish(self, observations, grid, batch_size=2):
+        validate_controls(batch_size=batch_size)
         values, self.values = self.values, {}
         expected = dict(detection_frames=observations, pose_frames=observations, feature_frames=observations,
-                        scatter_frames=grid, export_frames=grid, pose_calls=(observations+1)//2,
-                        feature_calls=(observations+1)//2, gvhmr_calls=1,
+                        scatter_frames=grid, export_frames=grid, pose_calls=(observations+batch_size-1)//batch_size,
+                        feature_calls=(observations+batch_size-1)//batch_size, gvhmr_calls=1,
                         vo_sample_frames=len(set(range(0, grid, 8)) | {grid-1}))
         if values != expected:
             raise ValueError(f'stage counters differ: actual={values}, expected={expected}')
@@ -149,9 +163,17 @@ class Counters:
 
 
 def validate_segment(plan):
-    if (plan['width'], plan['height']) != (960, 540):
-        raise ValueError('benchmark requires 960x540')
+    bounds = {'960-15': (960, 540, 15, 32), '640-10': (640, 360, 10, 22),
+              '640-15': (640, 360, 15, 32)}
+    variant = plan.get('variant', '960-15')
+    if variant not in bounds:
+        raise ValueError('unsupported segment variant')
+    width, height, hz, maximum = bounds[variant]
+    if (plan['width'], plan['height']) != (width, height):
+        raise ValueError(f'{variant} requires {width}x{height}')
+    if plan['sampling'].get('observation_hz', hz) != hz:
+        raise ValueError('observation frequency differs from variant')
     if not 2 <= len(plan['selected_indices']) <= 63:
         raise ValueError('segment grid must fit about two seconds')
-    if not 2 <= len(plan['sampling']['observation_indices']) <= 32:
+    if not 2 <= len(plan['sampling']['observation_indices']) <= maximum:
         raise ValueError('segment observation bound exceeded')

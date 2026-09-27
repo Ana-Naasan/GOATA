@@ -36,14 +36,25 @@ def load_demo_model():
 class CameraMotionSolver:
     """Serial SimpleVO solver with an explicit pycolmap no-pose failure."""
 
-    def __init__(self, params):
+    def __init__(self, params, seed=0):
+        if type(seed) is not int or seed < 0:
+            raise ValueError('VO seed must be a nonnegative integer')
         from hmr4d.utils.preproc.relpose.solver_two_view import PycolmapRansacTwoViewGeometrySolver
         self.backend = PycolmapRansacTwoViewGeometrySolver(params)
+        # The nested options belong to this solver, not the process-global RNG.
+        # Require read/write/readback: unsupported bindings must not run unseeded.
+        try:
+            self.backend.options.ransac.random_seed
+            self.backend.options.ransac.random_seed = seed
+            if self.backend.options.ransac.random_seed != seed:
+                raise ValueError('seed readback differs')
+        except (AttributeError, TypeError, ValueError, OverflowError, RuntimeError) as error:
+            raise RuntimeError('pycolmap options.ransac.random_seed unavailable or rejected seed; no unseeded fallback') from error
 
     def solve(self, pts0, pts1):
         import numpy as np
         import pycolmap
-        # Keep the pinned upstream estimator, matches and options unchanged.
+        # Keep the pinned estimator, matches and options except the explicit seed.
         matches = np.stack([np.arange(len(pts0)), np.arange(len(pts0))], axis=-1)
         answer = pycolmap.estimate_calibrated_two_view_geometry(
             self.backend.camera, pts0.astype(np.float64),
@@ -103,14 +114,18 @@ def infer_native(video, plan, output, worker):
         stages[name] = time.monotonic() - start
 
     def checked(tensor, shape, label):
-        if tuple(tensor.shape) != tuple(shape) or not torch.isfinite(tensor).all():
-            raise ValueError(f'invalid {label} shape or nonfinite values')
+        if (tensor.dtype != torch.float32 or tuple(tensor.shape) != tuple(shape)
+                or not torch.isfinite(tensor).all()):
+            raise ValueError(f'invalid {label} dtype, shape or nonfinite values')
         return tensor
 
     grid_count = len(plan['selected_indices'])
     count = len(plan['sampling']['observation_indices'])
     observation_video = output / 'observations.mp4'
-    with torch.inference_mode():
+    batch_size = worker.settings['batch_size']
+    # Never inherit AMP into crop/heatmap postprocessing, GVHMR or body export.
+    # Each of the two registered neural wrappers owns its own autocast scope.
+    with torch.inference_mode(), torch.autocast(device_type='cuda', enabled=False):
         started = time.monotonic()
         with worker.use('detector', Detector) as tracker:
             with worker.metrics.measure('detection'):
@@ -126,16 +141,19 @@ def infer_native(video, plan, output, worker):
         release(worker)
         mark('tracking_s', started)
 
-        # Upstream extractor batches are 16 and ViTPose doubles them for flip tests.
-        # Feed two crops at a time without modifying upstream source.
+        # Each outer slice fits upstream's fixed batch of 16. ViTPose's flip
+        # test remains unchanged, so the neural pose batch is twice this size.
         started = time.monotonic()
         with worker.metrics.measure('crop_preparation'):
             crops, crop_boxes = get_batch(str(observation_video), bbx, img_ds=1.0)
+            crops, crop_boxes = crops.float(), crop_boxes.float()
+            checked(crops, (count, 3, 256, 256), 'normalized crops')
+            checked(crop_boxes, (count, 3), 'crop boxes')
         with worker.use('pose', VitPoseExtractor) as pose:
             with worker.metrics.measure('pose'):
                 parts = []
-                for i in range(0, count, 2):
-                    part = pose.extract(crops[i:i+2], crop_boxes[i:i+2]).cpu()
+                for i in range(0, count, batch_size):
+                    part = pose.extract(crops[i:i+batch_size], crop_boxes[i:i+batch_size]).cpu()
                     counters.add('pose_calls')
                     counters.add('pose_frames', len(part))
                     parts.append(part)
@@ -149,8 +167,8 @@ def infer_native(video, plan, output, worker):
         with worker.use('features', Extractor) as extractor:
             with worker.metrics.measure('features'):
                 parts = []
-                for i in range(0, count, 2):
-                    part = extractor.extract_video_features(crops[i:i+2], crop_boxes[i:i+2]).cpu()
+                for i in range(0, count, batch_size):
+                    part = extractor.extract_video_features(crops[i:i+batch_size], crop_boxes[i:i+batch_size]).cpu()
                     counters.add('feature_calls')
                     counters.add('feature_frames', len(part))
                     parts.append(part)
@@ -183,7 +201,10 @@ def infer_native(video, plan, output, worker):
                               cx=plan['K'][0][2] / 2, cy=plan['K'][1][2] / 2)
         vo = SimpleVO(str(video), scale=0.5, step=8, method='sift', num_workers=1)
         with worker.metrics.measure('vo'):
-            transforms = vo.process_video_T_w2c_list_np(images[sample_ids], Matcher('sift'), CameraMotionSolver(params))
+            solver = CameraMotionSolver(params, seed=worker.settings['vo_seed'])
+            worker.metrics.emit(dict(event='vo_seed', seed=worker.settings['vo_seed'],
+                                     api='options.ransac.random_seed', scope='fresh serial solver per segment'))
+            transforms = vo.process_video_T_w2c_list_np(images[sample_ids], Matcher('sift'), solver)
             transforms = interpolate_missing_frames(transforms, sample_ids)
             counters.add('vo_sample_frames', len(sample_ids))
         rotations = torch.from_numpy(transforms[:, :3, :3]).float()
@@ -191,17 +212,21 @@ def infer_native(video, plan, output, worker):
         if (not torch.allclose(rotations.mT @ rotations, torch.eye(3).expand(count, 3, 3), atol=1e-3)
                 or not torch.allclose(torch.linalg.det(rotations), torch.ones(count), atol=1e-3)):
             raise ValueError('VO returned invalid rotation matrices')
-        del images, transforms, vo
+        del images, transforms, vo, solver
         mark('camera_motion_s', started)
 
         started = time.monotonic()
         data = {'length': torch.tensor(count), 'bbx_xys': bbx, 'kp2d': kp2d,
                 'K_fullimg': K.repeat(count, 1, 1), 'cam_angvel': compute_cam_angvel(rotations),
                 'f_imgseq': features}
+        for key, value in data.items():
+            if key != 'length':
+                checked(value, value.shape, 'GVHMR input ' + key)
         with worker.use('gvhmr', load_demo_model) as model:
             with worker.metrics.measure('gvhmr'):
                 prediction = model.predict(data, static_cam=False)
-                parameters = {space: {key: value.detach().cpu() for key, value in prediction[space].items()}
+                parameters = {space: {key: checked(value, value.shape, space + '/' + key).detach().cpu()
+                                      for key, value in prediction[space].items()}
                               for space in ('smpl_params_global', 'smpl_params_incam')}
                 plain = {space: {key: value.tolist() for key, value in fields.items()} for space, fields in parameters.items()}
                 plain['K_fullimg'] = prediction['K_fullimg'].detach().cpu().tolist()
@@ -216,6 +241,8 @@ def infer_native(video, plan, output, worker):
             write_json(output / 'observations.json', {'bbx_xys': bbx.tolist(), 'coco17_xy_score': kp2d.tolist(),
                                                     'camera_rotation_w2c': rotations.tolist(),
                                                     'vo_sample_indices': sample_ids,
+                                                    'vo_seed': worker.settings['vo_seed'],
+                                                    'vo_seed_api': 'options.ransac.random_seed',
                                                     'sampling': plan['sampling'],
                                                     'processed_track_ids': processed_track_ids,
                                                     'processed_observation_boxes': observation_boxes,
@@ -265,7 +292,7 @@ def infer_native(video, plan, output, worker):
             'array_layout': 'little endian, frame-major then vertex/joint-major XYZ; triangle triples u32',
             'fitted_valid_layout': 'u8 frame-major then 22 joints; 1 finite estimate, 0 unavailable',
             'asset_sha256': assets, 'stage_seconds': stages,
-            'counters': counters.finish(len(plan['sampling']['observation_indices']), grid_count),
+            'counters': counters.finish(len(plan['sampling']['observation_indices']), grid_count, batch_size),
             'model_lifecycle': RESIDENCY_MODES[worker.store.residency],
             'runtime_versions': {name: importlib.metadata.version(name) for name in
                                  ('torch', 'torchvision', 'av', 'numpy', 'smplx', 'pycolmap', 'ultralytics')},

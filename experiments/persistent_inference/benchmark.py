@@ -48,7 +48,10 @@ def benchmark(args):
         report = dict(status='complete', width=960, height=540, observation_hz=15, model_hz=30,
                       segment_count=4, requested_segment_seconds=2,
                       residency_mode=args.residency, lifecycle=RESIDENCY_MODES[args.residency],
-                      all_resident_fit_proven=False,
+                      all_resident_fit_proven=args.residency == 'resident' and all(
+                          row['result'].get('status') == 'complete' and
+                          row['result'].get('all_resident_fit_proven') is True for row in rows),
+                      fit_scope='only completed worker workloads/settings/device; not general capacity',
                       shared_input_split_s=preparation_s,
                       persistent_process_wall_s=warm['process_wall_s'],
                       cold_process_wall_sum_s=sum(row['process_wall_s'] for row in cold),

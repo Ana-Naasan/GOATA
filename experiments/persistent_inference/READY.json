@@ -1,0 +1,19 @@
+{
+  "status": "complete",
+  "selected_streaming_defaults": {
+    "variant": "640-15",
+    "precision": "weights-fp16",
+    "batch_size": 8
+  },
+  "helper_sha256": {
+    "adapter.py": "3b87421b429944b74ab179ae730c8b88cef14224db8ca72f9b137a0ae52ce041",
+    "benchmark.py": "1ffd96442aa96c6e6cfaf821df3e80843c558099b0c25841664e13468e7aaf9a",
+    "buffered.py": "7f99771f57477897a22180bebdf5cc6268bf0882e88f6bbd86d34664f848697e",
+    "fast.py": "2e4461f22c79f109238409e29c72dd7ed5142ef3b35dd9830e7df6e90a302077",
+    "lifecycle.py": "2a4d6a8b304e4fb3e5bf4aaeaefb6ebcbdca9497fbd16857da10bec1f6cdb59b",
+    "metrics.py": "fcdd343a0731627b7c8b1d1258c56720de05ad28fce7839374ba0391c736bc27",
+    "models.py": "b4a2ef79b06a28db88afaedaee3814180847152e6abc01f6b3061f7272e3aae0",
+    "precision.py": "de6d449098926653117ff112d8226fc110262b48dcfeb7c6ead89db4071f9522",
+    "worker.py": "3b7fb4660e6999994e8faf69405b9fc0abfed46624227e98c41d9adeb90888e8"
+  }
+}

@@ -386,8 +386,9 @@ Camera-motion estimates differed between persistent and fresh-process runs;
 full 3D numerical equivalence and accuracy remain unproven. The historical
 `all_resident_fit_proven` field is hardcoded false; completed-segment counts,
 constructor/use counts and allocator measurements are the actual fit evidence.
-FP16, larger batches, streaming ingestion and concurrent pipeline stages are
-separate unfinished experiments and are not included in this publication.
+That initial publication did not include FP16, larger batches or streaming.
+The later bounded experiment below adds those controls without changing the
+production service.
 
 CPU checks from the repository root:
 
@@ -429,3 +430,92 @@ sudo docker run --rm --gpus all --network none --read-only \
 controls. Each worker records stage timings, constructor/use counts, input and
 asset identities, and failure diagnostics. A completed benchmark is not a live
 service, annotated-video output, Quest latency measurement or clinical result.
+
+## Selected streaming experiment: 640px and 15 observations per second
+
+The selected defaults in `experiments/streaming_inference/experiment.py` are
+`640-15`, selective `weights-fp16`, and pose/feature batches of eight. This means
+640 by 360 analysis images with 15 expensive observations per second. Original
+frame IDs and presentation times remain intact; the model and camera-motion grid
+remain 30 Hz. Annotated playback retains the original rate. This does not change
+Quest capture settings or the production service command.
+
+The worker constructs all five models once and keeps them on the RTX 3070.
+Only ViTPose and HMR2 feature weights/forward passes use FP16. Decoding, detector,
+GVHMR, body geometry and camera motion stay FP32. Autocast weight caching is
+explicitly disabled to avoid retaining two additional large weight copies.
+Failure is explicit; there is no automatic precision or static-camera fallback.
+
+The experiment releases four chunks at two-second intervals. One tracker spans
+the whole take, and camera-motion pairs cross chunk boundaries. The overlap mode
+runs CPU visual odometry while the GPU computes observations. It makes one final
+whole-take GVHMR call after capture stops. It does not concatenate independently
+fitted two-second bodies or claim concurrent GPU model replicas.
+
+On the public eight-second WHAM clip, the selected configuration completed all
+three scheduling modes. With CPU-VO overlap, native geometry was verified 2.626
+seconds after scheduled capture stop; the annotated MP4 was closed and decoded
+successfully after 3.560 seconds. Serial streaming took 3.790 seconds to verified
+video. Ninety observations completed before stop in both streaming modes. Each
+model was constructed once across three takes. Scheduling modes produced exactly
+matching intermediate arrays and native geometry for this test.
+
+The after-stop control took 9.988 seconds, but ran first in its process and includes
+first-use effects. Do not attribute its full difference to scheduling. Initialization
+took 15.200 seconds before capture; this must finish before accepting work. Fixture
+creation, camera encoding, network transfer, service publication, download and Quest
+loading are excluded. The original source has 240 selected frames at 30000/1001 fps,
+so normal playback is 8.008 seconds while the capture-stop timing origin is eight
+seconds. These are one-source measurements, not latency or accuracy guarantees.
+
+The reviewed four-panel demo used 640px at **10** observations per second and
+960px at 15. The user selected 640px at **15**, then a separate GPU run verified
+that combination. Its compact evidence is `experiments/streaming_inference/rtx3070-640-15.json`.
+No video, checkpoint, body-model asset or credential is included in Git.
+
+Run CPU checks from the project root. Without model dependencies, pinned-source
+checks skip explicitly; the GPU image must pass them without skips. An inspected
+GVHMR checkout can be supplied through `PHYSIO_GVHMR_SOURCE` for CPU source-body
+checks, alongside `PHYSIO_ULTRALYTICS_SOURCE` described above.
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 experiments/streaming_inference/cpu_tests.py \
+  --processing-root "$PWD"
+```
+
+Run only on an otherwise idle GPU. Reuse the approved image, inputs and assets
+from the setup above. `OUTPUT` must be writable by the container user. Outputs are
+bounded beneath a writable copy of the streaming scripts; choose a new directory
+for each run. The helper code and model files stay read-only.
+
+```sh
+sudo docker run --rm --gpus all --network none --read-only \
+  --cap-drop ALL --security-opt no-new-privileges \
+  --user "$(id -u):$(id -g)" --memory 24g --cpus 8 --pids-limit 256 \
+  --tmpfs /tmp:rw,nosuid,nodev,size=2g \
+  --env PYTHONPATH=/experiment:/app:/opt/GVHMR \
+  --env PYTHONDONTWRITEBYTECODE=1 --env PYTHONHASHSEED=0 \
+  --mount "type=bind,src=$PROJECT/experiments/persistent_inference,dst=/experiment,readonly" \
+  --mount "type=bind,src=$PROJECT/experiments/streaming_inference,dst=/stream-source,readonly" \
+  --mount "type=bind,src=$PROJECT/processing,dst=/app/processing,readonly" \
+  --mount "type=bind,src=$ASSETS,dst=/opt/GVHMR/inputs/checkpoints,readonly" \
+  --mount "type=bind,src=$INPUT,dst=/input,readonly" \
+  --mount "type=bind,src=$OUTPUT,dst=/output" \
+  --workdir /opt/GVHMR --entrypoint /usr/bin/timeout physio-gvhmr:ee960bb \
+  --kill-after=30s 10m sh -c '
+    set -eu
+    mkdir /output/stream-640-15
+    cp /stream-source/*.py /output/stream-640-15/
+    S=/output/stream-640-15/experiment.py
+    python "$S" prepare --code /experiment --video /input/drone_video.mp4 \
+      --calibration /input/drone_calib.txt --output /output/stream-640-15/fixture
+    python "$S" run --code /experiment --fixture /output/stream-640-15/fixture \
+      --output /output/stream-640-15/result --deadline 300
+  '
+```
+
+The fixture adapter intentionally accepts the inspected public source, not
+arbitrary participant recordings. Two-second network ingestion and a persistent
+service lifecycle still need integration by the service/Quest owners. The GPU
+experiment produces native arrays, source-linked annotations and an MP4; it does
+not establish full Quest end-to-end behavior or clinical validity.

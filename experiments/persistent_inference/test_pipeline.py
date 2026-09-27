@@ -48,7 +48,16 @@ class FakeContainer:
 
 class PipelineTests(unittest.TestCase):
     def test_preparation_two_inputs_no_prediction_reuse(self):
+        for variant in ('960-15', '640-10', '640-15'):
+            with self.subTest(variant=variant):
+                self.check_preparation(variant)
+
+    def check_preparation(self, variant):
         from processing.reconstruction.runtime import write_json
+        from lifecycle import validate_controls
+        width, hz = fast.VARIANTS[variant]
+        height, scale = width*9//16, width/1920
+        observations = hz*2
         with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as name:
             root = Path(name)
             video = root/'source.mp4'
@@ -68,32 +77,41 @@ class PipelineTests(unittest.TestCase):
             calls = []
             def infer(video, plan, output, worker):
                 calls.append(plan)
-                self.assertEqual((plan['width'], plan['height']), (960,540))
-                self.assertEqual(plan['K'], [[660.5,0,480.],[0,660.5,270.],[0,0,1]])
+                self.assertEqual((plan['width'], plan['height']), (width,height))
+                self.assertEqual(plan['K'], [[1321*scale,0,960*scale],[0,1321*scale,540*scale],[0,0,1]])
                 self.assertEqual(plan['vo_source_indices'], list(range(60)))
-                self.assertEqual(len(plan['sampling']['observation_indices']), 30)
+                self.assertEqual(len(plan['sampling']['observation_indices']), observations)
+                self.assertEqual(plan['sampling']['observation_hz'], hz)
+                self.assertIn(f'{hz}Hz', plan['resampling'])
                 self.assertEqual(plan['source_frames'], doc['frames'])
                 for i, row in enumerate(plan['frame_mapping']):
                     self.assertEqual(row['source_frame_id'], doc['frames'][plan['selected_indices'][i]]['frame_id'])
-                return {'counters': {'detection_frames': 30}}
-            worker = SimpleNamespace(metrics=SimpleNamespace(emit=Mock()), store=SimpleNamespace(residency='resident'))
+                return {'counters': {'detection_frames': observations}}
+            worker = SimpleNamespace(metrics=SimpleNamespace(emit=Mock()), store=SimpleNamespace(residency='resident'),
+                                     settings=validate_controls(variant=variant), dtype_inventories={})
             with patch.dict(sys.modules, {'av': fake_av, 'cv2': fake_cv}), \
                  patch('buffered.writer', writer), patch('buffered.encode', encode), \
                  patch('buffered.close_writer'), patch('adapter.infer_native', side_effect=infer):
-                first_result = fast.run(video, root/'source.json', root/'one', 10**12, '960-15', worker)
+                first_result = fast.run(video, root/'source.json', root/'one', 10**12, variant, worker)
+                self.assertEqual(first_result['experiment'], worker.settings)
+                self.assertEqual((first_result['width'],first_result['height'],first_result['observation_hz']),
+                                 (width,height,hz))
+                self.assertEqual(first_result['pose_neural_batch_limit'],4)
+                self.assertEqual(first_result['vo_seed_api'], 'options.ransac.random_seed')
+                self.assertIn('precision.py', first_result['adapter_sha256'])
                 self.assertEqual(first_result['residency_mode'], 'resident')
                 self.assertIn('GPU-resident', first_result['model_cache'])
                 first = calls[0]['take_id']
                 doc['take_id'] = str(uuid4())
                 write_json(root/'source.json', doc)
                 worker.store.residency = 'cpu-offload'
-                second_result = fast.run(video, root/'source.json', root/'two', 10**12, '960-15', worker)
+                second_result = fast.run(video, root/'source.json', root/'two', 10**12, variant, worker)
                 self.assertEqual(second_result['residency_mode'], 'cpu-offload')
                 self.assertIn('CPU-retained', second_result['model_cache'])
             self.assertEqual(len(calls), 2)
             self.assertNotEqual(first, calls[1]['take_id'])
             self.assertIsNot(calls[0], calls[1])
-            self.assertEqual(len(videos[str(root/'one'/'observations.mp4')]), 30)
+            self.assertEqual(len(videos[str(root/'one'/'observations.mp4')]), observations)
             self.assertEqual(len(videos[str(root/'two'/'inference.mp4')]), 60)
 
     def test_four_segment_split_preserves_original_ids_pts_and_take_origins(self):

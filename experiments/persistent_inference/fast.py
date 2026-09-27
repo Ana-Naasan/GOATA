@@ -6,7 +6,7 @@ import math
 import time
 from pathlib import Path
 
-VARIANTS = {'960-15': (960,15)}
+VARIANTS = {'960-15': (960,15), '640-10': (640,10), '640-15': (640,15)}
 
 
 def resized(width,height,maxwidth,k):
@@ -23,7 +23,8 @@ def resized(width,height,maxwidth,k):
 
 
 def sampling(frames,hz,count):
-    if hz != 15 or not 2 <= count <= 63 or not 2 <= len(frames) <= 600:
+    if (type(hz) is not int or hz not in (10, 15) or type(count) is not int
+            or not 2 <= count <= 63 or not 2 <= len(frames) <= 600):
         raise ValueError('invalid sampling settings')
     times=[int(f['pts_ns']) for f in frames]
     if any(not f['image_valid'] for f in frames) or any(not 0 < b-a <= 100000000 for a,b in zip(times,times[1:])):
@@ -42,10 +43,10 @@ def sampling(frames,hz,count):
     observed_times = [times[i] for i in chosen]
     grid=[max(0, bisect_right(observed_times, times[0]+round(Fraction(i*10**9,30)))-1)
           for i in range(count)]
-    return dict(observation_indices=chosen, observations=[frames[i] for i in chosen],
+    return dict(observation_hz=hz, observation_indices=chosen, observations=[frames[i] for i in chosen],
                 grid_to_observation=grid,grid_times_s=[i/30 for i in range(count)],
                 omitted_source_frame_ids=[f['frame_id'] for i,f in enumerate(frames) if i not in chosen],
-                policy='15Hz nearest-source sampling; causal latest-observation hold on rounded-ns 30Hz targets; omitted images not identity-verified; GVHMR and VO remain segment-level estimators')
+                policy=f'{hz}Hz nearest-source sampling; causal latest-observation hold on rounded-ns 30Hz targets; omitted images not identity-verified; GVHMR and VO remain segment-level estimators')
 
 
 def scatter(values,indices):
@@ -62,12 +63,14 @@ def provenance():
     hashes = {name+'.py': sha(Path(module.__file__)) for name, module in modules.items()}
     hashes.update({name: sha(Path(__file__).with_name(name))
                    for name in ('adapter.py', 'fast.py', 'buffered.py', 'benchmark.py', 'worker.py',
-                                'models.py', 'lifecycle.py', 'metrics.py', 'ultralytics-identity.json')})
+                                'models.py', 'lifecycle.py', 'metrics.py', 'precision.py', 'ultralytics-identity.json')})
     return dict(upstream_commit=modules['native'].UPSTREAM_COMMIT, adapter_sha256=hashes,
                 asset_hash_policy='operator-trusted readonly assets; identity SHA-256 once/process; not expected-manifest approval')
 
 
 def run(video,sidecar,output,offset_ns,variant,worker):
+    if variant not in VARIANTS or variant != worker.settings['variant']:
+        raise ValueError('unsupported or inconsistent worker variant')
     import av
     import cv2
     from processing.reconstruction import runtime as r
@@ -82,7 +85,7 @@ def run(video,sidecar,output,offset_ns,variant,worker):
     w,h,k=resized(plan['width'],plan['height'],width,doc['camera']['intrinsics'])
     obs=sampling(plan['source_frames'],hz,len(plan['selected_indices']))
     from lifecycle import RESIDENCY_MODES, validate_segment
-    validate_segment(dict(width=w, height=h, selected_indices=plan['selected_indices'], sampling=obs))
+    validate_segment(dict(variant=variant, width=w, height=h, selected_indices=plan['selected_indices'], sampling=obs))
     output.mkdir()
     # First bind every original decoded PTS before sampling anything.
     with av.open(str(video)) as source:
@@ -106,7 +109,7 @@ def run(video,sidecar,output,offset_ns,variant,worker):
         row.update(inference_time_s=i/30,observation_index=obs['grid_to_observation'][i],
                    selection_error_ns=str(Fraction(int(row['source_pts_ns'])-int(plan['source_frames'][0]['pts_ns']))-Fraction(i*10**9,30)),
                    evidence='latest available sampled observation held on model grid; segment-level fitted estimate')
-    plan['resampling']='30Hz latest-observation hold from 15Hz sampling; VO retains original 30Hz mapping'
+    plan['resampling']=f'30Hz latest-observation hold from {hz}Hz sampling; VO retains original 30Hz mapping'
     outputs=[]
     try:
         for name,indices in (('inference.mp4',full_indices),('observations.mp4',obs['observation_indices'])):
@@ -142,6 +145,13 @@ def run(video,sidecar,output,offset_ns,variant,worker):
     worker.metrics.emit(dict(event='preparation', seconds=preparation, ok=True))
     result=infer_native(output/'inference.mp4',plan,output,worker)
     result.update(schema_version='gvhmr-native-1',take_id=doc['take_id'],variant=variant,
+                  experiment=dict(worker.settings), dtype_inventories=dict(worker.dtype_inventories),
+                  precision_scope='only ViTPose and HMR2 feature neural forward; autocast weight cache disabled; FP32 inputs/outputs and postprocessing; detector/GVHMR/SMPL/VO unchanged',
+                  width=w, height=h, observation_hz=hz, pose_flip_test=True,
+                  pose_neural_batch_limit=2*worker.settings['batch_size'], body_batch_size=16,
+                  detector_half=False, model_hz=30, vo_grid_hz=30, vo_step=8, vo_scale=0.5,
+                  vo_method='sift', vo_num_workers=1, static_camera=False,
+                  torch_seed=0, vo_seed_api='options.ransac.random_seed',
                   source_video_sha256=source_hash,source_sidecar_sha256=sidecar_hash,
                   preparation_s=preparation,local_elapsed_s=time.monotonic()-started,
                   **provenance(), residency_mode=worker.store.residency,

@@ -11,7 +11,8 @@ from pathlib import Path
 import re
 
 from metrics import Metrics
-from lifecycle import RESIDENCY_MODES, record_cleanup_error
+from lifecycle import BATCH_SIZES, PRECISIONS, RESIDENCY_MODES, record_cleanup_error, validate_controls
+from fast import VARIANTS
 
 
 def validate_rows(rows):
@@ -43,14 +44,18 @@ def dependency_identity(digest):
     return dict(source_tar_sha256=expected['source_tar_sha256'], installed_file_sha256=actual)
 
 
-def run(inputs, output, indices, launched_ns, residency='resident'):
+def run(inputs, output, indices, launched_ns, residency='resident', *,
+        precision='fp32', variant='960-15', batch_size=2, vo_seed=0):
     from buffered import check_output, save, verify
+    settings = validate_controls(precision, variant, batch_size, vo_seed)
+    if residency not in RESIDENCY_MODES:
+        raise ValueError('unknown residency mode')
     output.mkdir()
     os.environ['YOLO_OFFLINE'] = 'true'
     os.environ['YOLO_AUTOINSTALL'] = 'false'
     os.environ['YOLO_CONFIG_DIR'] = str(output/'ultralytics-config')
     metrics = Metrics(output/'metrics.jsonl')
-    metrics.emit(dict(event='process_entry', residency_mode=residency, entry_monotonic_s=ENTRY,
+    metrics.emit(dict(event='process_entry', residency_mode=residency, experiment=settings, entry_monotonic_s=ENTRY,
                       spawn_to_entry_s=ENTRY-launched_ns/1e9,
                       bootstrap_import_s=time.monotonic()-ENTRY))
     model_store = None
@@ -82,7 +87,7 @@ def run(inputs, output, indices, launched_ns, residency='resident'):
         with metrics.measure('dependency_identity'):
             identity = dependency_identity(digest)
         save(output/'dependency-identity.json', identity)
-        model_store = WorkerModels(metrics, PROJ_ROOT, ASSETS, digest, residency=residency)
+        model_store = WorkerModels(metrics, PROJ_ROOT, ASSETS, digest, residency=residency, **settings)
         with metrics.measure('trusted_asset_identity'):
             assets = model_store.identities.get()
         asset_hash_calls = model_store.identities.hash_calls
@@ -96,7 +101,8 @@ def run(inputs, output, indices, launched_ns, residency='resident'):
             model_store.preload(dict(detector=Detector, pose=VitPoseExtractor, features=Extractor,
                                      gvhmr=load_demo_model, body=lambda: make_smplx('supermotion').cuda().eval()))
             metrics.emit(dict(event='resident_ready', seconds=time.monotonic()-started,
-                              models=list(model_store.store.models), memory=metrics.memory()))
+                              models=list(model_store.store.models), experiment=settings,
+                              dtype_inventories=model_store.dtype_inventories, memory=metrics.memory()))
         completed = []
         for ordinal, row in enumerate(selected):
             metrics.segment = row['index']
@@ -111,7 +117,7 @@ def run(inputs, output, indices, launched_ns, residency='resident'):
             torch.cuda.manual_seed_all(0)
             started = time.monotonic()
             result = infer(folder/'source.mp4', folder/'sidecar.json', output/row['directory'],
-                           row['pts_offset_ns'], '960-15', model_store)
+                           row['pts_offset_ns'], variant, model_store)
             if model_store.store.active is not None:
                 raise RuntimeError('stage still active after segment')
             check_output(output)
@@ -127,18 +133,21 @@ def run(inputs, output, indices, launched_ns, residency='resident'):
             raise RuntimeError('constructor count mismatch')
         if model_store.store.uses != dict.fromkeys(expected, len(selected)):
             raise RuntimeError('model use count mismatch')
+        dtype_inventories = dict(model_store.dtype_inventories)
         closing, model_store = model_store, None
         closing.close()
         del closing
         metrics.segment = None
         report = dict(status='complete', pid=os.getpid(), residency_mode=residency,
+                      experiment=settings, dtype_inventories=dtype_inventories,
                       lifecycle=RESIDENCY_MODES[residency],
                       segments=completed, total_worker_s=time.monotonic()-ENTRY,
                       work_after_bootstrap_s=time.monotonic()-began,
                       process_gpu_peaks_bytes=metrics.peaks, host=metrics.memory(),
                       trusted_asset_sha256=assets, asset_hash_calls=asset_hash_calls,
                       comparison_scope='strict inference and native export; no preview, network or timeline',
-                      all_resident_fit_proven=False)
+                      all_resident_fit_proven=residency == 'resident' and len(completed) == len(selected),
+                      fit_scope='only this completed workload, settings and device; not replica or general capacity')
         save(output/'result.json', report)
         return report
     except BaseException as error:
@@ -150,7 +159,8 @@ def run(inputs, output, indices, launched_ns, residency='resident'):
                 record_cleanup_error(error, cleanup, 'worker_close')
         failure['cleanup_errors'] = getattr(error, 'cleanup_errors', [])
         save(output/'failure.json', dict(status='failed', **failure,
-                                         residency_mode=residency, fallback_applied=False,
+                                         residency_mode=residency, experiment=settings, all_resident_fit_proven=False,
+                                         fallback_applied=False,
                                          segment=metrics.segment, seconds=time.monotonic()-ENTRY,
                                          completed_segments=[r['index'] for r in locals().get('completed', [])]))
         raise
@@ -164,10 +174,20 @@ def main():
     parser.add_argument('--launched-ns', type=int, required=True)
     parser.add_argument('--residency', choices=RESIDENCY_MODES, default='resident',
                         help='resident keeps all five models on CUDA; cpu-offload never runs automatically')
+    parser.add_argument('--precision', choices=PRECISIONS, default='fp32',
+                        help='selective ViTPose/HMR2 neural precision only; all other stages stay FP32')
+    parser.add_argument('--variant', choices=VARIANTS, default='960-15')
+    parser.add_argument('--batch-size', type=int, choices=BATCH_SIZES, default=2,
+                        help='pose/feature crop batch; pose flip test doubles the neural batch')
+    parser.add_argument('--vo-seed', type=int, default=0,
+                        help='nonnegative pycolmap options.ransac.random_seed per solver')
     args = parser.parse_args()
+    if args.vo_seed < 0:
+        parser.error('vo-seed must be nonnegative')
     if args.indices != [0, 1, 2, 3] and (len(args.indices) != 1 or args.indices[0] not in range(4)):
         parser.error('indices must be 0 1 2 3 or a single index in 0..3')
-    run(args.inputs.resolve(), args.output.resolve(), args.indices, args.launched_ns, residency=args.residency)
+    run(args.inputs.resolve(), args.output.resolve(), args.indices, args.launched_ns, residency=args.residency,
+        precision=args.precision, variant=args.variant, batch_size=args.batch_size, vo_seed=args.vo_seed)
 
 
 if __name__ == '__main__':

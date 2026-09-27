@@ -39,7 +39,8 @@ class ResidentTests(unittest.TestCase):
         from contextlib import nullcontext
         metrics.measure.side_effect = lambda name: nullcontext()
         factories = {name: Mock(return_value=object()) for name in sorted(MODEL_NAMES)}
-        with patch.object(WorkerModels, 'move') as move, patch.object(WorkerModels, 'residency') as audit:
+        with patch.object(WorkerModels, 'move') as move, patch.object(WorkerModels, 'residency') as audit, \
+             patch.object(WorkerModels, 'setup_precision') as precision:
             worker = WorkerModels(metrics, '.', (), Mock())
             worker.preload(factories)
             self.assertEqual(audit.call_count, 5)
@@ -48,6 +49,7 @@ class ResidentTests(unittest.TestCase):
                     pass
             worker.close()
         self.assertEqual(move.call_count, 5)
+        self.assertEqual(precision.call_count, 5)
         self.assertTrue(all(call.args[2] == 'cuda' for call in move.call_args_list))
         self.assertEqual(worker.store.models, {})
         self.assertTrue(all(factory.call_count == 1 for factory in factories.values()))

@@ -1,0 +1,161 @@
+{
+  "status": "complete",
+  "config": {
+    "precision": "weights-fp16",
+    "variant": "640-15",
+    "batch_size": 8,
+    "vo_seed": 0
+  },
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 3070",
+    "total_memory_bytes": 8268611584
+  },
+  "runtime_versions": {
+    "torch": "2.3.0+cu121",
+    "numpy": "1.23.5",
+    "av": "13.0.0",
+    "pycolmap": "4.2.0",
+    "ultralytics": "8.2.42",
+    "smplx": "0.1.28"
+  },
+  "upstream_commit": "ee960bb6e2ea2d381aa97f08e9b71ef320b624b1",
+  "startup_excluded_s": 15.200436391001858,
+  "constructors": {
+    "detector": 1,
+    "pose": 1,
+    "features": 1,
+    "gvhmr": 1,
+    "body": 1
+  },
+  "order": [
+    "after-stop",
+    "streaming-serial",
+    "streaming-cpu-vo-overlap"
+  ],
+  "source_video": {
+    "byte_size": 20601030,
+    "sha256": "0da55210a305c3c75caa732c46b7330bb3d4e39ebeb9bc3af1e2b100dd8990c1"
+  },
+  "capture_duration_s": 8,
+  "playback_duration_s": 8.008,
+  "source_frame_count": 240,
+  "measurements": [
+    {
+      "mode": "after-stop",
+      "first_take_in_process": true,
+      "latencies": {
+        "stop_to_native_verified_s": 9.055679289995169,
+        "stop_to_annotation_package_verified_s": 9.081805497997266,
+        "stop_to_first_rendered_frame_s": 9.137617652995687,
+        "stop_to_video_closed_s": 9.925228266998602,
+        "stop_to_video_closed_decoded_s": 9.987549802994181
+      },
+      "completed_observations_before_stop": 0,
+      "completed_vo_pairs_before_stop": 0,
+      "process_gpu_peaks_bytes": {
+        "allocated": 4388262912,
+        "reserved": 4968153088
+      },
+      "model_uses": {
+        "detector": 4,
+        "pose": 4,
+        "features": 4,
+        "gvhmr": 1,
+        "body": 1
+      }
+    },
+    {
+      "mode": "streaming-serial",
+      "first_take_in_process": false,
+      "latencies": {
+        "stop_to_native_verified_s": 2.8420001189952018,
+        "stop_to_annotation_package_verified_s": 2.868135575998167,
+        "stop_to_first_rendered_frame_s": 2.925370754994219,
+        "stop_to_video_closed_s": 3.725992754996696,
+        "stop_to_video_closed_decoded_s": 3.790171708998969
+      },
+      "completed_observations_before_stop": 90,
+      "completed_vo_pairs_before_stop": 22,
+      "process_gpu_peaks_bytes": {
+        "allocated": 4388262912,
+        "reserved": 4968153088
+      },
+      "model_uses": {
+        "detector": 8,
+        "pose": 8,
+        "features": 8,
+        "gvhmr": 2,
+        "body": 2
+      }
+    },
+    {
+      "mode": "streaming-cpu-vo-overlap",
+      "first_take_in_process": false,
+      "latencies": {
+        "stop_to_native_verified_s": 2.6256460590011557,
+        "stop_to_annotation_package_verified_s": 2.6517399250005838,
+        "stop_to_first_rendered_frame_s": 2.707418925005186,
+        "stop_to_video_closed_s": 3.5005299870026647,
+        "stop_to_video_closed_decoded_s": 3.5603932220037677
+      },
+      "completed_observations_before_stop": 90,
+      "completed_vo_pairs_before_stop": 22,
+      "process_gpu_peaks_bytes": {
+        "allocated": 4388262912,
+        "reserved": 4968153088
+      },
+      "model_uses": {
+        "detector": 12,
+        "pose": 12,
+        "features": 12,
+        "gvhmr": 3,
+        "body": 3
+      }
+    }
+  ],
+  "scheduling_arrays_exactly_equal": true,
+  "executed_stream_code_sha256": {
+    "quality_demo.py": "1f030bfa812668cf8b7fca611cca77f6ced9cd935728f6790805c39d2833003c",
+    "stream_core.py": "173536fb9a56a5d7e0933f0dd6e9b202f5793c44cd80967080e6b92a363670ff",
+    "experiment.py": "2c233b131286fe290f84282b4b6a1f7bc88c6117f2305d63af975fffe15ff77a",
+    "fixture.py": "62d52a6ecd2c37a55cd00258d3b8eac6db118d4d84a4b4654e5ed0244c052946",
+    "cpu_tests.py": "a9143935fa7a5f647f12edb492d0ff493561adb209628a4f32842b8dcc0edfc7",
+    "test_fractional_fixture.py": "2bb16eaa5fb4c12ea52d2e95c015a8d21275181db8eeaa6bbe66f99fc3c7d147",
+    "test_integration.py": "b426c619a1f56e42fc4e80514c12b9c2f4cd70708028b6353501e3ee8d0609a1",
+    "inference.py": "661369dfb03eda0a8f59be20b5dc152a9db60c87ba947483725bff58b0acff20",
+    "test_stream.py": "9ee63d5af995c95ece997dd1a806c5878b4b6c072e1cdbb14d3eac495a083e39",
+    "test_quality_demo.py": "2805692252d8f31060c0e3df549716814e5c0d1e7c19958d5fceac960087b491"
+  },
+  "executed_helper_code_sha256": {
+    "test_pipeline.py": "38be8b447bb87362b4323e221017e675fb2776c8d787218fca0ed08b16aa88be",
+    "test_detector.py": "60268624461c0f759280ad5825f4e7af7ecb73e9e100cf0e51bfe8fbcc76a34b",
+    "test_resident.py": "e75e3a6f65a1f3dc0e578d04b31f1c8b113758ad523f7d4a34531ddd379d0da8",
+    "benchmark.py": "1ffd96442aa96c6e6cfaf821df3e80843c558099b0c25841664e13468e7aaf9a",
+    "fast.py": "e4d9998dbf1749920df973eb438f69f2fda86760cdb4aff459efbe1a3e1eb40a",
+    "test_pinned_detector.py": "6cdef2ae62ae364e143d2e2abaa75f60eef03d8f2aeaec9ad10d75bdb85cae27",
+    "test_precision.py": "0442583f0a61e2ed30fb19a1ca0941fbebacc4c4016d6764fff4d2818e73ced0",
+    "test_adapter_cleanup.py": "3abf91750c1926def58d714891dd7a676e1c6e627673aad1e29a09e5a0365a9a",
+    "precision.py": "de6d449098926653117ff112d8226fc110262b48dcfeb7c6ead89db4071f9522",
+    "test_worker.py": "313586bb4b414e7fb77c257c1f35c4de66a27733c2837b36a41ccca3bc2eac31",
+    "metrics.py": "fcdd343a0731627b7c8b1d1258c56720de05ad28fce7839374ba0391c736bc27",
+    "test_controls.py": "31f9422999b0a9d66fcfc98d70251fcdafcbdfc8c2efd7fdeaee3ffe2f9f54d5",
+    "lifecycle.py": "2a4d6a8b304e4fb3e5bf4aaeaefb6ebcbdca9497fbd16857da10bec1f6cdb59b",
+    "adapter.py": "3b87421b429944b74ab179ae730c8b88cef14224db8ca72f9b137a0ae52ce041",
+    "buffered.py": "3cdcce20a125ceeda4c3fd2c907b774717a73ee5ad19b8f11bf11606e1af2a6b",
+    "models.py": "b4a2ef79b06a28db88afaedaee3814180847152e6abc01f6b3061f7272e3aae0",
+    "worker.py": "3b7fb4660e6999994e8faf69405b9fc0abfed46624227e98c41d9adeb90888e8",
+    "test_warm.py": "20a1c24840ab3187c547f6e1f9f01a0e681a1e66d5a5c0b20cd1b6941ebd707f",
+    "test_benchmark.py": "338e1185a5697c3dc13a03324e3790568ccbfe1bb3a8bed2f543576b1f4e69c5"
+  },
+  "limitations": [
+    "No capture/mux/network/Quest display latency measured.",
+    "Provided calibration plus rectification assumption, not independent physical calibration.",
+    "No clinical findings/foot assessment; omitted source images identity-unverified.",
+    "CPU VO overlap only, no claim of simultaneous CUDA kernels.",
+    "Whole-take bidirectional GVHMR output is available only after stop.",
+    "First-use/order effects are not separated in the after-stop control.",
+    "Fixture creation and model initialization precede capture timing.",
+    "Source and helper hashes identify the measured snapshot. Publication also preserves main PR13 calibration and rounded-endpoint fixes in the independent-segment helper; those paths are not used by this streaming run.",
+    "Visual approval covered the earlier 640px/10Hz demo; this separate run verifies execution at the user-selected 640px/15Hz."
+  ]
+}
