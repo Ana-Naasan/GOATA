@@ -1,19 +1,15 @@
 # Codex session handoff
 
-**Last updated:** September 26, 2026. Integration candidate; final build and merge
-verification are still pending at this documentation checkpoint.
+**Last updated:** September 26, 2026. Integration source `636746d` built, installed and cold-launched successfully. The integrated change is tracked in [PR #10](https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp/pull/10).
 
 ## Current state
 
 - Working branch: `codex/hamza-quest`, checkout
   `/Users/baderasadi/.codex/worktrees/hamza-quest/HTH`, based on `main` at `fc8cd51`.
-  The merge of `origin/codex/mohammad-ml` at `20cf164` is in progress; new Quest and
-  integration changes have not yet been committed at this checkpoint.
-- `origin/main` was still `fc8cd51` when fetched at 20:02 EDT. Mohammad's new
-  reconstruction/analysis foundations are on his branch. Fetch again before merge.
+  Integration commit `636746d` has parents `fc8cd51` and Mohammad's `20cf164`, preserving both histories. It is pushed to `origin/codex/hamza-quest`.
+- `origin/main` was still `fc8cd51` at the final pre-PR fetch. Mohammad's `20cf164` is included as a merge parent; no teammate history was overwritten.
 - UI work ran separately in `/Users/baderasadi/.codex/worktrees/quest-ui/HTH`.
-  Its owned Viewer/scene-builder files are copied into the integration checkout;
-  the final source copy is now frozen with the last review fixes.
+  Its final Viewer/scene-builder files are copied into the integration checkout. The frozen source hashes remained unchanged through the final build.
 - Completed in source: bounded capture, private patient/session persistence,
   authenticated client/service integration, native reconstruction export, replay
   controls, evidence routing, microscope processing and native Meta UI Set flow.
@@ -85,11 +81,17 @@ combined checks. Final APK/device acceptance remains separate.
 | Microscope | 33 tests passed; 86.4% coverage in that module at its review checkpoint. |
 | Independent review | Code, C#, Java, Python and security source reviews completed; identified blockers were fixed. Final source/build checks still apply after subsequent changes. |
 | Real native geometry import | The C# importer loaded 242 frames, 10,475 vertices and 22 joints in 291 ms on Mac. This does not measure Quest load/render latency. |
-| Staged inventory | 520 files / 11.1 MiB inspected; no participant media, keys, weights, restricted assets or secret-pattern hits found. Recheck after later staging changes. |
-| Integrated Unity build | First integrated APK built successfully. Intermediate build 2 was intentionally cancelled because its source was obsolete. The frozen final build is running; do not accept an earlier APK as proof of the final source. |
+| Staged inventory | Final integration staged inventory inspected: no participant media, keys, model weights or secret-pattern hits. Third-party sample/font licenses retained. Unity temporary build assets are excluded. |
+| Integrated Unity build | Final frozen source built successfully (exit 0), installed and cold-launched on Quest. APK: 85,431,296 bytes; SHA-256 `6f16d5dd100fcdfce58ffbad8a88204c9961245decaf65641953b34387c82dac`. Build log: `/Users/baderasadi/Library/Caches/HTH/integration-proof/integration-build-final.log`. Intermediate build 2 was cancelled before the final-source build. |
 
 ### Device evidence
 
+- Final APK installed and cold-launched at approximately 20:12 EDT. Startup logs
+  show configured native manipulation and input focus, with no captured C# exceptions.
+  Placement waits for a tracked head; the screenshot does not establish layout
+  acceptance because the headset was not tracking a wearer. The user has been
+  asked to check readability, patient keyboard and Menu/Options physically.
+  Log: `/Users/baderasadi/Library/Caches/HTH/integration-proof/final-startup.log`.
 - A Quest 3 is connected and authorized through ADB. The official camera sample
   built/installed and the user confirmed a live moving camera image at 16:16 EDT.
   This proves camera display, not fresh recording metadata or calibrated geometry.
@@ -167,11 +169,9 @@ original, prove rectification or provide physical body scale.
 
 ## Next concrete tasks and incomplete requirements
 
-1. Finish the frozen final build and verify its APK. Its log is
-   `/Users/baderasadi/Library/Caches/HTH/integration-proof/integration-build-final.log`.
-   Inspect staged assets for secrets, recordings, weights and
-   restricted data; preserve third-party licenses. Fetch `main` again before the
-   authorized PR/merge and record final commit/check results here.
+1. Confirm PR #10 status against remote `main` (`gh pr view 10`, `git log -1`).
+   The source build, installation and automated checks are complete; feature
+   acceptance below remains open. Do not reclassify those checks as full product completion.
 2. Finish the new GPU proof after interactive Docker access. Exercise the actual
    service with verified current output and then a consented fresh Quest capture.
    Validate camera/mux timing, intrinsics/distortion policy, image orientation,

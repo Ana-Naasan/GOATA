@@ -5,3 +5,7 @@ Checks/coverage/
 *.sentis
 *.sentis.meta
 *.onnx.meta
+# Unity build hooks create these assets temporarily and remove them after packaging.
+/Assets/Resources/PerformanceTestRunInfo.json*
+/Assets/Resources/PerformanceTestRunSettings.json*
+/Assets/StreamingAssets/RuntimeActionBindings.json*

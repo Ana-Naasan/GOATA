@@ -1,9 +1,10 @@
 # Quest app
 
 **Last updated:** September 26, 2026. The patient/capture/processing/review flow is
-implemented with native Meta UI Set controls. The first integrated Android build
-succeeded. The frozen final build is running and still needs wearer acceptance; the
-latest layout, gestures and fresh recording-to-replay flow remain unverified.
+implemented with native Meta UI Set controls. Final integration source `636746d`
+built successfully as an ARM64 APK (85,431,296 bytes), installed and cold-launched.
+Startup logs show no captured C# exceptions and placement awaiting a tracked head. Wearer acceptance of the
+latest layout, gestures and fresh recording-to-replay flow remains pending.
 
 ## Open and build
 
