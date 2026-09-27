@@ -44,7 +44,7 @@ namespace Physio.Workflow
         }
         public SessionRecord CreateSession(Guid patientId, string testType)
         {
-            WorkflowJson.Choice(new JValue(testType), "elk", "rtk", "barefoot");
+            WorkflowJson.Choice(new JValue(testType), "elk", "rtk", "walking", "barefoot");
             lock (gate)
             {
                 ReadPatient(patientId);
@@ -75,7 +75,7 @@ namespace Physio.Workflow
                 Require(File.Exists(SessionPath(sessionId)) || File.Exists(SessionPath(sessionId) + ".bak"), "Saved test does not exist.");
                 var result = new SessionRecord(ReadRecovered(SessionPath(sessionId)));
                 Require(result.Id == sessionId && result.PatientId == patientId, "Saved test belongs to another patient.");
-                WorkflowJson.Choice(new JValue(result.TestType), "elk", "rtk", "barefoot");
+                WorkflowJson.Choice(new JValue(result.TestType), "elk", "rtk", "walking", "barefoot");
                 var capturePath = Path.Combine(SessionDirectory(sessionId), "capture", "manifest.json");
                 if (result.Status == "awaiting_capture" && File.Exists(capturePath))
                 {

@@ -22,9 +22,15 @@ namespace Physio.Viewer
         private RenderTexture? secondTexture;
         private double start;
         private double end;
+        private double evidenceStart;
+        private double evidenceEnd;
+        private bool contextPlayback;
+        public bool IsReady => first != null && first.isPrepared && initialized && !firstSeeking && !secondSeeking;
         private bool pair;
         private bool wantsPlay;
         private bool initialized;
+        private bool firstSeeking;
+        private bool secondSeeking;
         private string label = "";
 
         public void Configure(RawImage originalImage, RawImage amplifiedImage, TMP_Text captionLabel)
@@ -33,9 +39,10 @@ namespace Physio.Viewer
         public void OpenOriginal(string path, Guid take, double startSeconds, double endSeconds, bool matchingTake, double mediaStart, double mediaEnd)
         {
             Stop();
-            start = mediaStart; end = mediaEnd;
+            start = evidenceStart = mediaStart; end = evidenceEnd = mediaEnd;
             label = (matchingTake ? "MATCHING RECORDING" : "SEPARATE RECORDING") +
-                $" · ORIGINAL · {startSeconds:0.00}–{endSeconds:0.00}s\nTake {take.ToString("N").Substring(0, 8)} · hologram paused";
+                (startSeconds == endSeconds ? $" · PEAK at {startSeconds:0.00}s" : $" · SOURCE {startSeconds:0.00}–{endSeconds:0.00}s") +
+                $"\nTake {take.ToString("N").Substring(0, 8)} · hologram paused";
             caption.text = label + " · loading";
             amplified.transform.parent.gameObject.SetActive(false);
             first = CreatePlayer(path, original, out firstTexture);
@@ -54,6 +61,23 @@ namespace Physio.Viewer
             second = CreatePlayer(result.ArtifactPath(Guid.Parse((string)microscope["amplified_artifact_id"]!)), amplified, out secondTexture);
         }
 
+        public void ToggleFullRecording()
+        {
+            if (!IsReady || first == null || pair) return;
+            if (!contextPlayback)
+            {
+                contextPlayback = true; start = 0; end = first.length;
+                SeekToStart(); wantsPlay = true;
+            }
+            else TogglePlay();
+        }
+
+        public void ReturnToEvidence()
+        {
+            contextPlayback = false; start = evidenceStart; end = evidenceEnd;
+            Restart();
+        }
+
         public void TogglePlay()
         {
             if (first == null || end <= start) return;
@@ -68,8 +92,7 @@ namespace Physio.Viewer
         public void Restart()
         {
             Pause();
-            if (first != null && first.isPrepared) first.time = start;
-            if (second != null && second.isPrepared) second.time = start;
+            SeekToStart();
         }
 
         private void Update()
@@ -77,12 +100,10 @@ namespace Physio.Viewer
             if (first == null || !first.isPrepared || (pair && (second == null || !second.isPrepared))) return;
             if (!initialized)
             {
-                first.time = start;
-                if (second != null) second.time = start;
-                caption.text = label + " · ready";
                 initialized = true;
+                SeekToStart();
             }
-            if (!wantsPlay) return;
+            if (firstSeeking || secondSeeking || !wantsPlay) return;
             if (first.time >= end && end > start) { Restart(); return; }
             if (!first.isPlaying) first.Play();
             if (second == null) return;
@@ -93,10 +114,10 @@ namespace Physio.Viewer
         private VideoPlayer CreatePlayer(string path, RawImage target, out RenderTexture texture)
         {
             if (!File.Exists(path)) throw new FileNotFoundException("Original evidence file is unavailable.");
-            texture = new RenderTexture(1024, 576, 0) { name = "Evidence display" };
+            texture = new RenderTexture(1280, 960, 0) { name = "Evidence display" };
             texture.Create();
             target.texture = texture;
-            target.GetComponent<AspectRatioFitter>().aspectRatio = 16f / 9f;
+            target.GetComponent<AspectRatioFitter>().aspectRatio = 4f / 3f;
             target.enabled = true;
             var player = gameObject.AddComponent<VideoPlayer>();
             player.playOnAwake = false;
@@ -109,8 +130,35 @@ namespace Physio.Viewer
             player.waitForFirstFrame = true;
             player.isLooping = false;
             player.errorReceived += OnVideoError;
+            player.seekCompleted += OnSeekCompleted;
             player.Prepare();
             return player;
+        }
+
+        private void SeekToStart()
+        {
+            caption.text = label + (contextPlayback ? "\nFull recording context · seeking" : " · seeking source frame");
+            if (first != null && first.isPrepared) firstSeeking = SeekPlayer(first);
+            if (second != null && second.isPrepared) secondSeeking = SeekPlayer(second);
+            UpdateSeekCaption();
+        }
+
+        private bool SeekPlayer(VideoPlayer player)
+        {
+            if (player.frame >= 0 && Math.Abs(player.time - start) < 1e-6) return false;
+            player.time = start; return true;
+        }
+
+        private void UpdateSeekCaption()
+        {
+            if (!firstSeeking && !secondSeeking) caption.text = label + (contextPlayback ? "\nFull recording context · measured peak unchanged" : " · paused at source");
+        }
+
+        private void OnSeekCompleted(VideoPlayer player)
+        {
+            if (player == first) firstSeeking = false;
+            if (player == second) secondSeeking = false;
+            UpdateSeekCaption();
         }
 
         private void OnVideoError(VideoPlayer source, string message)
@@ -127,6 +175,7 @@ namespace Physio.Viewer
             {
                 if (player == null) continue;
                 player.errorReceived -= OnVideoError;
+                player.seekCompleted -= OnSeekCompleted;
                 player.Stop();
                 Destroy(player);
             }
@@ -134,7 +183,7 @@ namespace Physio.Viewer
             if (firstTexture != null) { firstTexture.Release(); Destroy(firstTexture); }
             if (secondTexture != null) { secondTexture.Release(); Destroy(secondTexture); }
             firstTexture = secondTexture = null;
-            pair = false; initialized = false;
+            pair = false; contextPlayback = false; initialized = false; firstSeeking = secondSeeking = false;
             if (original != null) original.texture = null;
             if (amplified != null) amplified.texture = null;
         }

@@ -46,7 +46,9 @@ static class CaptureChecks
             Reject(() => CaptureBundle.Sidecar(take,640,480,frames,new long[] {0,0},"front","seated","not_applicable",false,500,500,320,240,Array.Empty<long>()));
             Reject(() => CaptureBundle.Sidecar(take,640,480,frames,new long[] {0},"front","seated","not_applicable",false,500,500,320,240,Array.Empty<long>()));
             Reject(() => CaptureBundle.ValidateIdentity("../escape",session,"elk","front","not_applicable"));
-            Reject(() => CaptureBundle.ValidateIdentity(patient,session,"walking","front","not_applicable"));
+            CaptureBundle.ValidateIdentity(patient,session,"walking","front","not_applicable");
+            Reject(() => CaptureBundle.ValidateIdentity(patient,session,"walking","front","left"));
+            Reject(() => CaptureBundle.ValidateIdentity(patient,session,"gait","front","not_applicable"));
             Reject(() => CaptureBundle.ValidateIdentity(patient,session,"barefoot","front","not_applicable"));
             Reject(() => CaptureBundle.Sidecar(take,640,480,frames,new long[] {0,33333},"front","seated","not_applicable",false,double.NaN,500,320,240,Array.Empty<long>()));
             Reject(() => CaptureBundle.ValidateIdentity(patient,"bad","elk","front","left"));
@@ -96,6 +98,15 @@ static class CaptureChecks
             File.Move(Path.Combine(root,footTake+".mp4"),Path.Combine(footDir,footTake+".mp4"));
             var foot=CaptureBundle.Save(footDir,patient,session,"barefoot",footMetadata);
             Check(JObject.Parse(foot.ManifestJson)["replay_take_id"]==null && foot.Interrupted);
+            var walkingTake=Guid.NewGuid().ToString();
+            var walkingDir=Path.Combine(root,"walking");Directory.CreateDirectory(walkingDir);
+            File.WriteAllBytes(Path.Combine(walkingDir,walkingTake+".mp4"),new byte[]{0,0,0,8,102,116,121,112});
+            var walkingMetadata=CaptureBundle.Sidecar(walkingTake,640,480,frames,new long[]{0,33333},"right","exercise","not_applicable",false,500,500,320,240,Array.Empty<long>());
+            var wrongWalking=(JObject)walkingMetadata.DeepClone();wrongWalking["capture"]["condition"]="seated";
+            Reject(() => CaptureBundle.Save(walkingDir,patient,session,"walking",wrongWalking));
+            var walking=JObject.Parse(CaptureBundle.Save(walkingDir,patient,session,"walking",walkingMetadata).ManifestJson);
+            Check((string)walking["replay_take_id"]==walkingTake && (string)walking["protocol_id"]=="walking");
+            Check((string)walking["takes"][0]["kind"]=="full_body" && (string)walking["takes"][0]["condition"]=="exercise");
             var microscopeTake=Guid.NewGuid().ToString();
             var microscopeDir=Path.Combine(root,"microscope");Directory.CreateDirectory(microscopeDir);
             File.WriteAllBytes(Path.Combine(microscopeDir,microscopeTake+".mp4"),new byte[]{0,0,0,8,102,116,121,112});

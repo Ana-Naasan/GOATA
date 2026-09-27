@@ -41,7 +41,7 @@ def test_pipeline_real_adapter_boundary_publishes_bound_replay(tmp_path, monkeyp
     result = Pipeline(settings(tmp_path), microscope=no_microscope)(inputs, output, capture, job, stages.append)
     assert result["findings"] == []
     assert {item["name"]: item["status"] for item in result["features"]} == {
-        "replay": "available", "movement": "unavailable", "microscope": "unavailable"}
+        "replay": "available", "movement": "unavailable", "microscope": "unavailable", "observations": "unavailable"}
     assert stages == ["preparing_recording", "estimating_movement", "analysing_test", "preparing_replay"]
     record = {"manifest": capture, "job": job, "input_digest": job["input_digest"]}
     validate_result(result, record, inputs, output, settings(tmp_path).limits)
@@ -62,7 +62,7 @@ def test_barefoot_does_not_run_full_body_inference(tmp_path, monkeypatch):
     del capture["replay_take_id"]
     monkeypatch.setattr("processing.pipeline.run_inference", lambda *_: pytest.fail("Foot closeup reached full-body estimator"))
     result = Pipeline(settings(tmp_path), microscope=no_microscope)(inputs, output, capture, context(capture), lambda _: None)
-    assert {item["name"] for item in result["features"]} == {"foot", "microscope"}
+    assert {item["name"] for item in result["features"]} == {"foot", "microscope", "observations"}
     assert not result["findings"]
 
 
@@ -170,3 +170,67 @@ def test_unverified_camera_option_is_explicit_and_reaches_cli(tmp_path, monkeypa
     config = settings(tmp_path, inference_command=(sys.executable, '-c', script), inference_cwd=tmp_path,
                       allow_unverified_pinhole=True)
     run_inference(video, sidecar, tmp_path / 'out', config)
+
+
+def test_walking_reuses_one_reconstruction_and_publishes_observation_status(tmp_path, monkeypatch):
+    capture, inputs, native, output, _, _ = native_fixture(tmp_path, test_type="walking")
+    calls = []
+    def inference(video, sidecar, destination, config):
+        calls.append(video)
+        shutil.copytree(native, destination)
+    monkeypatch.setattr("processing.pipeline.run_inference", inference)
+    result = Pipeline(settings(tmp_path), microscope=no_microscope)(inputs, output, capture, context(capture), lambda _: None)
+    assert len(calls) == 1
+    assert result["schema_version"] == "1.1"
+    assert result["observations"] == []  # Two-joint fixture cannot support walking angles.
+    features = {item["name"]: item for item in result["features"]}
+    assert features["observations"]["status"] == "unavailable"
+    assert features["movement"]["status"] == "unavailable"
+    assert "gait" in features["movement"]["detail"].lower()
+    assert result["replay"]["source_take_id"] == capture["replay_take_id"]
+    validate_result(result, {"manifest": capture, "job": context(capture) | {"job_id": result["job_id"]},
+                             "input_digest": result["input_digest"]}, inputs, output, settings(tmp_path).limits)
+
+
+def test_pipeline_calculates_known_walking_angles_from_exported_source(tmp_path, monkeypatch):
+    import hashlib
+    import struct
+
+    from processing.reconstruction.runtime import geometry_metadata
+
+    capture, inputs, native, output, _, handoff = native_fixture(tmp_path, test_type="walking")
+    names = ["left_hip", "right_hip", "left_shoulder", "right_shoulder",
+             "left_knee", "right_knee", "left_ankle", "right_ankle"]
+    flat = []
+    mapping = json.loads((native / "selection.json").read_text())["frame_mapping"]
+    for index in range(handoff["frame_count"]):
+        last = mapping[index]["source_frame_id"] == 13
+        pose = [(-.2, 1, 0), (.2, 1, 0), (-.2, 2, int(last)), (.2, 2, int(last)),
+                (-.2, .5, 0), (.2, .5, 0), (-.2, .5 if last else 0, .5 if last else 0), (.2, 0, 0)]
+        flat.extend(value for point in pose for value in point)
+    (native / "joints.f32").write_bytes(struct.pack(f"<{len(flat)}f", *flat))
+    (native / "fitted_valid.u8").write_bytes(bytes([1]) * handoff["frame_count"] * len(names))
+    handoff["geometry"] = geometry_metadata(names, [-1] + [0] * (len(names) - 1), 3, 1)
+    for name in ("joints.f32", "fitted_valid.u8"):
+        path = native / name
+        handoff["artifacts"][name] = {"byte_size": path.stat().st_size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    (native / "handoff.json").write_text(json.dumps(handoff))
+    monkeypatch.setattr("processing.pipeline.run_inference", lambda v, s, d, c: shutil.copytree(native, d))
+    job = context(capture)
+    result = Pipeline(settings(tmp_path), microscope=no_microscope)(inputs, output, capture, job, lambda _: None)
+    by_quantity = {(item["quantity_code"], item["side"]): item for item in result["observations"]}
+    expected = {("walking.knee_flexion", "left"): (90, 13),
+                ("walking.knee_flexion", "right"): (0, 10),
+                ("walking.trunk_lean", "not_applicable"): (45, 13)}
+    for key, (angle, source_frame) in expected.items():
+        observation = by_quantity[key]
+        assert observation["metrics"][0]["value"] == pytest.approx(angle)
+        assert observation["evidence"]["first_frame_id"] == source_frame
+    assert result["findings"] == []
+    assert next(feature for feature in result["features"] if feature["name"] == "movement")["status"] == "unavailable"
+    validate_result(result, {"manifest": capture, "job": job, "input_digest": job["input_digest"]},
+                    inputs, output, settings(tmp_path).limits)
+    method = next(method for method in result["methods"] if method["method_id"] == "pose-geometry-v1")
+    saved_settings = json.loads((output / method["settings_artifact_id"]).read_text())
+    assert saved_settings["source_take_id"] == capture["replay_take_id"]
+    assert saved_settings["unavailable_quantities"] == []

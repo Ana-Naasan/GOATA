@@ -53,7 +53,7 @@ def mutate_sidecar(manifest, archive, mutate):
     return result, zip_members([(key, payload if key == name else data) for key, data in members])
 
 
-@pytest.mark.parametrize("test_type", ["elk", "rtk", "barefoot"])
+@pytest.mark.parametrize("test_type", ["elk", "rtk", "walking", "barefoot"])
 def test_valid_capture_preserves_original_bytes(tmp_path, test_type):
     manifest, archive = build_capture(tmp_path, test_type=test_type)
     (accepted, digest), destination = validate(tmp_path, manifest, archive)
@@ -346,3 +346,26 @@ def test_deflate_decoder_drains_output_with_no_unconsumed_input():
     info.compress_type = zipfile.ZIP_DEFLATED
     info.compress_size = len(compressed)
     assert b"".join(_expanded_chunks(io.BytesIO(compressed), info)) == payload
+
+
+@pytest.mark.parametrize("change", [
+    lambda manifest: manifest.pop("replay_take_id"),
+    lambda manifest: manifest["takes"][0].update(condition="standing"),
+    lambda manifest: manifest["takes"][0].update(kind="foot_closeup"),
+    lambda manifest: manifest["takes"][0].update(side="left"),
+])
+def test_walking_requires_full_body_exercise_source(tmp_path, change):
+    manifest, archive = build_capture(tmp_path, test_type="walking")
+    change(manifest)
+    from processing.api_contract import validate_schema
+    with pytest.raises(ValueError):
+        validate_schema("CaptureManifest", manifest)
+    reject(tmp_path, manifest, archive)
+
+
+def test_walking_retains_separate_steady_hold_microscope_capture(tmp_path):
+    manifest, archive = build_capture(tmp_path, test_type="walking", take_count=2)
+    manifest["replay_take_id"] = manifest["takes"][1]["take_id"]
+    manifest["takes"][0].update(kind="microscope", condition="steady_hold")
+    manifest, archive = mutate_sidecar(manifest, archive, lambda sidecar: sidecar["capture"].update(condition="steady_hold"))
+    validate(tmp_path, manifest, archive)

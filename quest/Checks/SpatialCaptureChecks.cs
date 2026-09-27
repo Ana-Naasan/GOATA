@@ -25,7 +25,14 @@ static class SpatialCaptureChecks
         Check(!SpatialCapturePresentation.LatestCaptureIsSelected(unselected, false, 42, completed, new[] { selected }, completed), "unselected retake never supplies latency");
         Check(!SpatialCapturePresentation.LatestCaptureIsSelected(selected, false, 42, completed, new[] { selected }, completed.AddSeconds(1)), "earlier selected take is not capture completion");
         Check(!SpatialCapturePresentation.LatestCaptureIsSelected(selected, false, 0, completed, new[] { selected }, completed), "missing monotonic origin uses wall estimate");
-        Console.WriteLine("20 spatial capture presentation checks passed"); return 0;
+        var walking = SpatialCapturePresentation.SetupInstruction("walking");
+        Check(walking.Contains("straight") && walking.Contains("right, front, back and left"), "walking is four independent straight passes");
+        Check(walking.Contains("clear path") && walking.Contains("feet") && walking.Contains("still") && walking.Contains("backwards"), "walking safety framing and stationary practitioner explicit");
+        Check(!SpatialCapturePresentation.ViewInstruction("walking", "left", 10).Contains("Seated"), "walking never seated");
+        Check(SpatialCapturePresentation.ViewInstruction("walking", "left", 10).Contains("10 seconds"), "walking duration retained");
+        Check(SpatialCapturePresentation.SetupInstruction("elk").Contains("seated"), "ELK remains seated");
+        Check(SpatialCapturePresentation.SetupInstruction("barefoot").Contains("foot"), "historical barefoot guidance preserved");
+        Console.WriteLine("26 spatial capture presentation checks passed"); return 0;
     }
     static void Check(bool value, string label) { if (!value) throw new Exception(label); }
 }

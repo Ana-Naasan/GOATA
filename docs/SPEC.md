@@ -1,6 +1,6 @@
 # Physio Motion Replay — complete implementation specification
 
-- **Version:** 1.0, September 26, 2026.
+- **Version:** 1.1, September 27, 2026. The user replaced the new barefoot assessment with Walking review; historical barefoot records remain supported.
 - **State:** accepted product decisions; component implementations and checks exist, with real Quest end-to-end and assessment acceptance incomplete. See `HANDOFF.md`.
 - **Target:** Meta Quest 3, with desktop/server processing.
 - **Original deadline:** September 27, 2026, 10:00 a.m. EDT / 14:00 UTC.
@@ -36,7 +36,7 @@ The visual effect should be impressive because the movement and findings come fr
 | Requirement | Decision and reason |
 |---|---|
 | Device/operator | Practitioner wears Quest 3; participant performs the test. |
-| Tests | Exactly three: seated flank stretch (KERAAL ELK), seated torso rotation (KERAAL RTK), barefoot assessment. Limits the protocol/model work. |
+| Tests | Exactly three new-test choices: seated flank stretch (KERAAL ELK), seated torso rotation (KERAAL RTK), Walking review. Historical barefoot records remain readable and reprocessable. |
 | Capture | Live instructions and quality guidance; completed findings after all required captures. |
 | Human appearance | Fitted translucent blue surface; recognizable body proportions matter, face/clothing texture does not. |
 | Replay | True animated 3D geometry viewed from any headset position. A floating 2D video does not replace it. |
@@ -46,13 +46,13 @@ The visual effect should be impressive because the movement and findings come fr
 | Patients | Multiple local profiles with dated histories and saved results. |
 | Findings | Test-specific labels, explanation, body region/side, source interval and evidence. Practitioner decides corrections. |
 | Microscope | Contextual Magnify motion action with labelled original/amplified images. Required. |
-| Feet | Dedicated barefoot method and close-up workflow. Required; its supported metric still needs evidence. |
+| Walking | Full-body capture and source-linked estimated movement observations. Cadence, physical distance and clinical gait assessment require separate methods and validation. |
 | UI | Meta UI Set, readable bounded panels and standard hand/controller behaviour. |
 | Voice | Optional after all required capabilities and rehearsal work. |
 
 ### Excluded
 
-Arbitrary exercise recognition, unrestricted walking analysis, external face identification, TMR sensing, new sensing hardware, photorealistic reconstruction, live reconstructed humans during capture, automatic treatment/correction advice, production clinic accounts/integrations and a general-purpose voice assistant.
+Arbitrary exercise recognition, unrestricted clinical gait analysis, external face identification, TMR sensing, new sensing hardware, photorealistic reconstruction, live reconstructed humans during capture, automatic treatment/correction advice, production clinic accounts/integrations and a general-purpose voice assistant.
 
 Earlier discussions of sound stealing, magnetic sensing, object cloning and security overlays were alternative projects. Do not combine them into this application. Gaussian-splat and detailed-avatar research is deferred because the accepted blue-body appearance does not require it.
 
@@ -91,7 +91,7 @@ Opening history restores the saved result version. Reprocessing creates another 
 8. Ask for a retake when the relevant region leaves frame or required evidence is missing.
 9. Save the capture locally before submission. Processing starts after the required captures finish.
 
-For the approved movement-capture prototype, guide four separate recordings in this order: **patient’s right → front → back → left**. Default to ten seconds; allow five, ten or fifteen seconds before recording the first view, then keep the chosen duration for the assessment. Use a visible countdown and manual Record action at each position. This duration and view sequence are interface settings, not an evaluated clinical protocol. Keep seated ELK/RTK instructions; the room presentation does not introduce a walking assessment. Barefoot capture uses close-ups around one selected foot, with fixed anatomical left/right identity and standing condition. It does not request torso repetitions or generate a full-body replay from foot close-ups. Avoid hard-coding an arbitrary distance before testing framing on Quest.
+For the movement-capture prototype, guide four separate recordings in this order: **patient’s right → front → back → left**. Default to ten seconds; allow five, ten or fifteen seconds before recording the first view, then keep the chosen duration for the assessment. Use a visible countdown and manual Record action at each position. This duration and view sequence are interface settings, not an evaluated clinical protocol. ELK/RTK remain seated. Walking uses independent straight passes with the whole body and feet in frame; the practitioner stays at the selected position during each pass. Legacy barefoot drafts retain close-ups around one selected foot, fixed anatomical side and standing condition, without a full-body replay. Avoid hard-coding an arbitrary distance before testing framing on Quest.
 
 ### 4.2 Seated flank stretch — `elk`
 
@@ -107,13 +107,19 @@ Use the KERAAL RTK protocol and its own required framing. The annotation guide c
 
 Assess whether the camera/model can observe each required movement. A fitted torso segment is not a direct measurement of individual lumbar vertebrae or chair contact.
 
-### 4.4 Barefoot assessment — `barefoot`
+### 4.4 Walking review — `walking`
+
+Record a straight walking pass from each guided position with one participant and the whole body and feet continuously visible. Keep the path clear and allow the participant to stop before the camera. Front means approaching the camera, rear means walking away, and side views follow motion across the image. The practitioner remains at the selected position during the pass; do not follow the participant by walking backwards. Headset motion still requires the existing moving-camera estimator.
+
+Use `kind: full_body`, `side: not_applicable`, `condition: exercise`, and a selected `replay_take_id`. Keep all performances separate. The initial observations describe only the reconstructed take: estimated left/right knee flexion and torso inclination from estimated upright. This is a capture/review protocol, not a clinically validated gait test. Do not infer cadence, physical speed, stride length, limp or normality from this implementation.
+
+### 4.4.1 Historical barefoot assessment — `barefoot`
 
 Record left/right identity, the capture view, standing/seated condition and any calibration. Guide barefoot close-ups, including the view required by the selected foot method. The method determines exact framing and metrics; a plausible-looking foot reconstruction is not evidence of arch condition.
 
 Full-body estimation stops accepting results during close-ups. Review opens the foot evidence and its findings. If a body reference is available, it must come from an explicitly identified full-body take for that same patient; show its source time and keep the foot result attached to its own capture condition.
 
-**Unresolved implementation requirement:** select an obtainable, appropriately evaluated foot measurement/classification method. A standard body pose tracker provides no arch landmark. No validated ready-to-run Quest flat-foot classifier has been established. Capture-only functionality does not complete this feature.
+**Historical limitation:** no automated, validated foot method was established before Walking review replaced this new-test choice. A standard body pose tracker provides no arch landmark. Existing foot results must retain their unavailable status and original evidence; do not present compatibility support as completed foot analysis.
 
 ### 4.5 Guided multiple views
 
@@ -253,13 +259,21 @@ If only clip-level annotations are available for a category, do not invent frame
 
 The candidate implementation in `processing/analysis/exercises/` provides ELK Error1 classifier foundations, but no authorized-data training and held-out evaluation establish a Quest method. RTK remains unsupported. The service therefore returns unavailable exercise assessment and no fabricated findings. The precise baseline and supported category list remain gated on data inspection. The required behaviour is genuine exercise-specific findings with evidence. A scripted label or random score cannot satisfy it. Do not label a fitted spine animation as measured vertebral pathology.
 
-### 7.3 Foot analysis
+### 7.3 Estimated movement observations
+
+Result version 1.1 carries `observations` separately from evaluated `findings`, with its own availability feature. Use the selected take's validated, unamplified fitted joints. The initial quantities are lateral torso lean for ELK, projected shoulder-to-pelvis rotation for RTK, and left/right knee flexion plus unsigned torso inclination for Walking review. Torso inclination is relative to estimated upright, not verified forward walking direction. A straight hip–knee–ankle chain has zero estimated knee flexion. These geometric definitions do not establish anatomical or clinical accuracy.
+
+Each reported extreme points to its actual original frame/time. Reconstructed finite joints do not establish joint visibility. Report the estimates as limited evidence, retain method/version and limitations, and omit quantities with invalid or degenerate required geometry. Numerical tests must cover source binding, gaps, missing landmarks, reflection, heading, translation, scaling and angle wrapping. Preserve historical result 1.0 readers, and release the updated Quest client before enabling result 1.1 on a service.
+
+Do not add step counts/cadence until a step-event detector is verified against labelled source video. Physical speed, stride length and other distance measures need calibration and reference comparison. Gait diagnoses, injury risk and treatment advice are outside this implementation.
+
+### 7.3.1 Historical foot analysis
 
 Select a method whose documented input conditions and output match what we can capture. A photographic arch measurement may need controlled view, visible anatomical points and scale; a classifier needs obtainable weights/data and suitable evaluation. Review licensing and input compatibility before integration.
 
 For the chosen method, record the exact output, required views, units/calibration, reference comparison and known failure conditions. Test it against appropriate reference measurements or labels. A static standing result stays labelled standing; it is not a statement about arch behaviour during walking or a torso exercise.
 
-`processing/analysis/foot/` currently computes geometry from manual anatomical annotations. It has no automated landmark extraction or reference validation. The service and Quest expose this incomplete status. If a usable method cannot be established, mark the automated foot feature incomplete and explain the blocker. Preserve its capture/evidence workflow, but do not count that fallback as completed analysis or silently remove the requirement.
+`processing/analysis/foot/` computes geometry from manual anatomical annotations. It has no automated landmark extraction or reference validation. Preserve the unavailable status and capture/evidence workflow for saved foot sessions. The user explicitly replaced this new-test requirement with Walking review on September 27, 2026; historical compatibility does not complete automated foot assessment.
 
 ### 7.4 Findings and feedback
 
@@ -308,7 +322,7 @@ Magnification supports visual inspection. Compute numerical movement values from
 | Finding | Label, explanation, source interval/frames, body region, values, evidence and limitations. |
 | Microscope result | Original/amplified media, source region/interval, method/settings and quality state. |
 
-Use `elk`, `rtk`, `barefoot` as stable machine test IDs. Display names are separate. No patient names are needed by the processing service. Save results under the session's patient UUID, not whichever profile happens to be selected when a download finishes.
+Use `elk`, `rtk`, `walking` as new-test machine IDs and retain `barefoot` for historical compatibility. Display names are separate. No patient names are needed by the processing service. Save results under the session's patient UUID, not whichever profile happens to be selected when a download finishes.
 
 ### 8.2 Capture bundle
 
@@ -432,7 +446,7 @@ Job states are pending, running, succeeded and failed. UI stages map to preparin
 Use a UUID idempotency key for submission. Retrying the same submission must return the same job when its content matches. Reusing a key with different content returns a conflict. A deliberate new processing attempt gets a new key/result version while keeping original media and session identity.
 
 The first service implementation uses provisional `protocol_id` values `elk`,
-`rtk` and `barefoot`, matching `test_type`, with `protocol_version: "1.0"`.
+`rtk`, `walking` and historical `barefoot`, matching `test_type`, with `protocol_version: "1.0"`.
 These identify the capture contract, not evaluated clinical protocols or
 required-view decisions. Revise them only with actual protocol/model evidence. Recording duration must cover the last
 source PTS offset and may include its final frame's presentation duration.
@@ -490,7 +504,7 @@ Export completion and feature completion are different. A saved result can repor
 | Service/app restart | Reopen persisted status/history; reconcile actual job status. |
 | Unsupported analysis category | Label unsupported/unavailable; do not generate a guessed note. |
 | Malformed result | Reject before rendering and show result-load failure. |
-| Missing foot/microscope evidence | Explain the required capture; feature stays incomplete. |
+| Missing walking/microscope evidence | Explain the required capture; feature stays unavailable. |
 
 ## 10. Resources, access and version record
 
@@ -502,7 +516,7 @@ Export completion and feature completion are different. A saved result can repor
 | NVIDIA compute | Sponsor availability, credentials, GPU/VRAM, CUDA/driver, network reachability and authorized cost. |
 | Reconstruction assets | GVHMR code/weights and fitted-body assets; access, compatible versions and terms. |
 | KERAAL | Dataset access, ELK/RTK recordings, annotations, participant splits and separate code/data licenses. |
-| Foot method | Obtainable code/weights/data and evidence for its exact claimed output. |
+| Walking observations | Verify angle definitions, full-body input, original-frame links and reference error; no unvalidated gait classification. |
 | Magnification | Compatible implementation/license, representative footage and noise checks. |
 | Demo area | Adequate lighting, chair for seated protocols, safe viewing/capture space and consenting teammates. |
 
@@ -569,11 +583,11 @@ Before implementing a new binary parser or time transform, write focused tests f
 ### M3 — required analysis breadth
 
 - Add RTK using its own protocol/categories and the shared pipeline.
-- Implement the selected foot method and capture calibration/condition checks; compare its output to a suitable reference.
+- Add Walking review with full-body capture and source-linked estimated observations; compare the displayed estimates against source/reference evidence and report their limits.
 - Add microscope processing and labelled source/amplified comparison with camera-noise checks.
 - Finish Quest placement, scaling and input/menu recovery using existing components.
 
-**Exit:** each required capability has an actual input/output example, test result and known limitations. Capture-only feet or ordinary zoom without motion amplification remain incomplete.
+**Exit:** each required capability has an actual input/output example, test result and known limitations. Walking capture alone or ordinary zoom without motion amplification remain incomplete. Clinical exercise assessment remains separate from estimated movement observations.
 
 ### M4 — device rehearsal and handoff
 
@@ -597,7 +611,7 @@ Workstreams are Quest capture/UI, model/data/analysis, and integration/replay/te
 |---|---|
 | A01 | Two profiles retain separate histories even when processing finishes after switching patients. |
 | A02 | Restart restores saved test metadata, exact result version and replay/evidence references. |
-| A03 | Only ELK, RTK and barefoot choices; each has its own protocol, view requirements and result labels. |
+| A03 | Only ELK, RTK and Walking review new-test choices; each has its own capture guidance and result scope. Historical barefoot sessions remain accessible. |
 | A04 | Permission denial, retake and interrupted capture preserve prior valid work. |
 | A05 | Actual source timestamps survive resampling, dropped frames and inference. Test irregular timing, not only constant FPS. |
 | A06 | Known asymmetric pose/axis fixture catches mirroring, wrong handedness, triangle winding and scale conversion. |
@@ -606,7 +620,7 @@ Workstreams are Quest capture/UI, model/data/analysis, and integration/replay/te
 | A09 | Paused body remains fixed in room while head movement changes the viewpoint. |
 | A10 | Invalid frames/joints remain identifiable; missing data is not interpreted as zero movement. |
 | A11 | Held-out-person evaluation reports actual per-category results; a fresh teammate test exposes capture-domain failures. |
-| A12 | Foot result identifies side, view, capture condition, calibration and reference comparison; no unsupported gait inference. |
+| A12 | Walking observations identify side, view, actual source frame/time, angle definition and limitations. No unverified physical dimensions, step events or clinical gait inference. Historical foot evidence remains accessible. |
 | A13 | Microscope shows matched original/amplified intervals and rejects footage dominated by camera/background shake. |
 | A14 | Notes contain finding/explanation/evidence; correction decisions remain with the practitioner. |
 | A15 | Navigation/record controls/review work seated with one hand/controller; targets/text remain usable in-headset. |
@@ -627,7 +641,7 @@ Model evaluation is separate from software tests. No clinical accuracy threshold
 3. While actual processing runs, explain the purpose or show a clearly labelled previous test.
 4. Open the new result when ready. Pause its blue body, walk around it and select a finding.
 5. Scrub/reverse/slow the same movement; show its recorded evidence and the relevant microscope view when valid.
-6. Show the separate foot result and reopen a previous dated test to demonstrate history.
+6. Show Walking review observations and their original evidence, then reopen a previous dated test to demonstrate history.
 
 Never present a prerecorded result as the newly captured result. If processing or a feature fails, explain that specific failure and label the recovery recording. The demo can continue, but the failed capability stays failed in the delivery record.
 
@@ -639,7 +653,7 @@ Never present a prerecorded result as the newly captured result. If processing o
 | Reconstruction exceeds latency budget | Profile stages on actual compute; shorten unnecessary capture and reduce display payload while retaining valid evidence. Do not promise a speedup before measuring. |
 | Fixed-FPS scripts corrupt timing | Explicit source-time map/resampling test. |
 | KERAAL-to-Quest domain mismatch | Compatible preprocessing and held-out/fresh capture evaluation; constrain supported labels. |
-| No suitable foot method | Retain requirement and mark incomplete; never substitute pose landmarks for arch evidence. |
+| Walking estimates imply medical assessment | Label fitted-pose estimates and their limits; evaluate against references before making clinical claims. |
 | Camera noise dominates magnification | Steady capture, compensation/reference check, explicit recapture response. |
 | Mesh/joints diverge | Same fitted output and tested coordinate/joint map. |
 | Estimated scale appears measured | Store scale provenance and label estimates; calibrate before reporting physical dimensions. |

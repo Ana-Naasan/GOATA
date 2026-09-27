@@ -43,6 +43,7 @@ namespace Physio.Viewer
             jointObjects.Clear(); boneLines.Clear();
             replay = null; clock = null; mesh = null; meshObject = null; meshVertices = null;
             findingJointNames = Array.Empty<string>(); findingHighlightVisible = false;
+            ClearRegionMarker();
             SetReplayVisible(false);
             replayPanel?.ApplyState(HandReplayPanel.Empty);
         }
@@ -55,11 +56,13 @@ namespace Physio.Viewer
             if (replayDisplayRoot != null) replayDisplayRoot.gameObject.SetActive(visible);
         }
 
-        public void SelectFinding(FindingInterval interval, string[] jointNames)
+        public void SelectFinding(FindingInterval interval, string[] jointNames, string region = "Selected region")
         {
             if (clock == null) return;
             clock = clock.SelectFinding(interval);
             findingJointNames = (string[])jointNames.Clone();
+            regionLabel = region;
+            replayPanel?.SelectEvidence(interval.StartTime, interval.EndTime, region);
             UpdateFindingHighlight(true);
             RenderCurrentFrame(true);
         }
@@ -68,6 +71,7 @@ namespace Physio.Viewer
         {
             findingJointNames = (string[])jointNames.Clone();
             findingHighlightVisible = false;
+            ClearRegionMarker();
             ApplyJointHighlight(jointNames);
         }
 
@@ -77,6 +81,7 @@ namespace Physio.Viewer
             if (!force && visible == findingHighlightVisible) return;
             findingHighlightVisible = visible;
             ApplyJointHighlight(visible ? findingJointNames : Array.Empty<string>());
+            if (!visible) HideRegionMarker();
         }
 
         private void ApplyJointHighlight(string[] jointNames)

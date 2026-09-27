@@ -28,14 +28,14 @@ Work continuously and hand off usable output immediately. The user does not want
 ## Preserve the product decisions
 
 - Quest 3; practitioner wears the headset and captures a consenting participant.
-- Exactly three tests: KERAAL ELK seated flank stretch, KERAAL RTK seated torso rotation, barefoot assessment.
+- Exactly three new-test choices: KERAAL ELK seated flank stretch, KERAAL RTK seated torso rotation, and Walking review. The user replaced barefoot capture with Walking review on September 27, 2026; preserve historical barefoot sessions and results.
 - Live capture guidance; completed findings and reconstructed replay after processing.
 - Target 1–2 minutes from final capture to loaded analysis/replay; measure the whole path.
 - Patient-fitted translucent blue body and aligned skeleton. Facial likeness, clothing colour and photorealism are unnecessary.
 - Full timeline, reverse, speed, frame steps, walk-around viewing and display manipulation.
 - Multiple patients and saved dated tests; findings specific to the chosen test.
 - Findings include explanation and evidence. The practitioner chooses corrections; do not add automated exercise-correction or treatment advice.
-- Foot assessment and motion microscope are required. An unavailable feature must remain marked incomplete, not silently dropped.
+- Walking observations and motion microscope are required. Observations are estimated quantities, separate from evaluated clinical findings. An unavailable feature must remain marked incomplete, not silently dropped.
 - Use Meta's UI Set and familiar input/menu behaviour. Voice is optional only after the required flow works.
 
 ## Work simply and verify

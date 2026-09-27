@@ -37,6 +37,9 @@ namespace Physio.Viewer
         [SerializeField] private RawImage amplifiedPreview = null!;
         [SerializeField] private GameObject previewRoot = null!;
         [SerializeField] private TMP_Text previewCaption = null!;
+        [SerializeField] private GameObject reviewTabs = null!;
+        [SerializeField] private Button observationsTab = null!;
+        [SerializeField] private Button assessmentTab = null!;
 
         private enum Screen { Patients, History, Tests, CaptureSetup, Capture, CaptureSummary, Processing, Review, Finding, Feature, Foot, Microscope, Options, Versions, Demo }
         private Screen screen;
@@ -65,6 +68,7 @@ namespace Physio.Viewer
         private bool captureWasBusy;
         private bool savingCapture;
         private bool busy;
+        private bool originalEvidenceOpen;
         private CancellationTokenSource? processingCancellation;
         private TaskCompletionSource<bool>? frameCompletion;
         private readonly ConcurrentQueue<ProcessingUpdate> updates = new();
@@ -95,6 +99,7 @@ namespace Physio.Viewer
             if (hadFocus && !focus) evidence.Pause();
             hadFocus = focus;
             captureOverlay.SetVisible(screen == Screen.Capture && focus);
+            if (originalEvidenceOpen) { primary.interactable = focus && evidence.IsReady; secondary.interactable = focus && evidence.IsReady; }
             back.interactable = focus && !busy && !CaptureBusy;
             options.interactable = focus && !busy && !CaptureBusy;
             if (keyboard != null && keyboard.status != TouchScreenKeyboard.Status.Visible)
@@ -142,6 +147,7 @@ namespace Physio.Viewer
         {
             if (CaptureBusy && next != Screen.Capture) { status.text = "Stop and save the active recording first."; return; }
             screen = next;
+            originalEvidenceOpen = false;
             workspaceVisuals.SetActive(next != Screen.Capture);
             captureOverlay.SetVisible(next == Screen.Capture && viewer.HasInputFocus);
             if (resetPage) page = 0;
@@ -154,7 +160,14 @@ namespace Physio.Viewer
                 (next == Screen.Options && ((returnScreen == Screen.Review && result?.ReplayTakeId != null) || returnScreen == Screen.Demo)));
             previewRoot.SetActive(false);
             amplifiedPreview.transform.parent.gameObject.SetActive(false);
-            foreach (var row in rows) row.gameObject.SetActive(false);
+            reviewTabs.SetActive(next == Screen.Review);
+            foreach (var row in rows)
+            {
+                row.gameObject.SetActive(false);
+                var layout = row.GetComponent<LayoutElement>(); layout.minHeight = layout.preferredHeight = 56;
+                var label = row.GetComponentsInChildren<TMP_Text>(true).First(t => t.name == "Label"); label.fontSize = 24; label.color = Color.white;
+            }
+            body.fontSize = 24;
             SetAction(primary, "", null); SetAction(secondary, "", null);
             body.text = "";
             SetBodyHeight(next == Screen.Review ? 56 : next == Screen.Finding || next == Screen.Feature ? 300 : next == Screen.Capture || next == Screen.Microscope || next == Screen.Foot ? 96 : 150);
@@ -248,7 +261,7 @@ namespace Physio.Viewer
         {
             heading.text = "Choose an assessment";
             body.text = "Three supported tests. Findings remain specific to the selected test and original recording.";
-            var tests = new[] { "elk", "rtk", "barefoot" };
+            var tests = ReviewEvidence.NewTests();
             for (var i = 0; i < tests.Length; i++)
             {
                 var type = tests[i];
@@ -317,9 +330,12 @@ namespace Physio.Viewer
 
         private async Task BindResult(CachedResult loaded, bool markFirstDisplay = false)
         {
-            var data = await Task.Run(loaded.LoadReplay);
+            var selectedSession = session;
+            var opened = await Task.Run(() => (Replay: loaded.LoadReplay(), Capture: selectedSession == null ? null : store.Capture(selectedSession)));
+            var data = opened.Replay;
             if (this == null) return;
             result = loaded; manifest = loaded.Manifest; finding = null;
+            reviewCapture = opened.Capture; selectedObservation = null; showObservations = true;
             if (data != null) viewer.LoadReplay(data); else viewer.ClearReplay();
             Show(Screen.Review);
             if (markFirstDisplay && patient != null && session != null)
@@ -358,29 +374,10 @@ namespace Physio.Viewer
         private static IEnumerator AfterRenderedFrame(TaskCompletionSource<bool> completion)
         { yield return new WaitForEndOfFrame(); completion.TrySetResult(true); }
 
-        private void RenderReview()
-        {
-            heading.text = result?.ResultId == session?.ResultId ? "Review recording" : "Review saved version";
-            if (manifest == null) { body.text = "No validated result is loaded."; return; }
-            body.text = $"RESEARCH DEMO · UNVALIDATED\n{(result?.ResultId == session?.ResultId ? "Latest result" : "Previous saved result")} · {result?.ResultId.ToString("N").Substring(0, 8)}";
-            var findings = (JArray)manifest["findings"]!;
-            var choices = findings.Cast<JObject>().Select(f => ((string)f["label"]!, (Action)(() =>
-            { finding = f; detailPage = 0; Show(Screen.Finding); }))).ToList();
-            choices.AddRange(((JArray)manifest["features"]!).Select(f => ($"{f["name"]} · {f["status"]}", (Action)(() =>
-            { featureDetail = $"{f["name"]} · {f["status"]}\n{f["detail"]}"; detailPage = 0; Show(Screen.Feature); }))));
-            List(choices.ToArray(), 2);
-            if (findings.Count == 0) status.text = session?.TestType == "barefoot"
-                ? "Foot analysis unavailable. Automatic foot landmarks and calibrated measurements are not available for this recording."
-                : "Movement findings unavailable. This recording has not been assessed for exercise errors.";
-            SetAction(primary, session?.TestType == "barefoot" ? "Foot assessment" : "Motion microscope", () => Show(session?.TestType == "barefoot" ? Screen.Foot : Screen.Microscope));
-            SetAction(secondary, "History", () => { session = null; Show(Screen.History); });
-            if (result?.ResultId == session?.ResultId && session?.CaptureToLoadedSeconds is double elapsed) status.text = (status.text + $"\n{elapsed:0.0}s capture to first display" + (session.CaptureTimingBasis == "monotonic" ? "" : " · wall-clock estimate")).Trim();
-        }
-
         private void RenderFinding()
         {
             if (finding == null || result == null) { Show(Screen.Review); return; }
-            heading.text = (string)finding["label"]!;
+            heading.text = finding["observation_id"] != null ? InsightPresentation.EstimatedLabel((string)finding["label"]!) : (string)finding["label"]!;
             var interval = finding["evidence"]!;
             var metrics = finding["metrics"] is JArray values ? string.Join("\n", values.Select(m =>
                 $"{m["name"]}: {m["value"]} {m["unit"]} · {m["basis"]} · scale {m["scale_status"]} {m["scale_provenance"]}")) : "";
@@ -393,7 +390,8 @@ namespace Physio.Viewer
             var takeId = Guid.Parse((string)interval["take_id"]!);
             if (result.ReplayTakeId == takeId)
                 viewer.SelectFinding(new FindingInterval(takeId, (double)interval["start_s"]!, (double)interval["end_s"]!),
-                    finding["highlight_joint_names"]?.Values<string>().Where(name => name != null).Select(name => name!).ToArray() ?? Array.Empty<string>());
+                    finding["highlight_joint_names"]?.Values<string>().Where(name => name != null).Select(name => name!).ToArray() ?? Array.Empty<string>(), (string?)finding["region"] ?? "Selected region");
+            if (finding["observation_id"] != null) text = InsightPresentation.Details(finding, EvidenceView(finding), method);
             Detail(text);
             SetAction(primary, "Open original evidence", () => OpenEvidence(finding));
             SetAction(secondary, "Motion microscope", () => Show(Screen.Microscope));
@@ -405,6 +403,7 @@ namespace Physio.Viewer
             try
             {
                 viewer.PauseReplay();
+                originalEvidenceOpen = true;
                 var interval = (JObject)selected["evidence"]!;
                 var take = Guid.Parse((string)interval["take_id"]!);
                 var same = ReviewEvidence.CanSeek(result!.ReplayTakeId, take, (double)interval["start_s"]!, (double)interval["end_s"]!);
@@ -412,9 +411,11 @@ namespace Physio.Viewer
                 {
                     viewer.SetReplayVisible(true);
                     viewer.SelectFinding(new FindingInterval(take, (double)interval["start_s"]!, (double)interval["end_s"]!),
-                        selected["highlight_joint_names"]?.Values<string>().Where(name => name != null).Select(name => name!).ToArray() ?? Array.Empty<string>());
+                        selected["highlight_joint_names"]?.Values<string>().Where(name => name != null).Select(name => name!).ToArray() ?? Array.Empty<string>(), (string?)selected["region"] ?? "Selected region");
                 }
-                else viewer.SetReplayVisible(false);
+                else { viewer.Highlight(Array.Empty<string>()); viewer.SetReplayVisible(false); }
+                GetComponent<HandReplayPanel>().ShowTimeline(same);
+                reviewTabs.SetActive(false);
                 previewRoot.SetActive(true);
                 foreach (var row in rows) row.gameObject.SetActive(false);
                 SetBodyHeight(56);
@@ -430,8 +431,9 @@ namespace Physio.Viewer
                     End: store.OriginalVideoFrameSeconds(patientId, sessionId, take, lastFrame)));
                 if (this == null) return;
                 evidence.OpenOriginal(media.Path, take, sourceStart, sourceEnd, same, media.Start, media.End);
-                SetAction(primary, "Play / pause footage", evidence.TogglePlay);
-                SetAction(secondary, "Restart footage", evidence.Restart);
+                status.text = same ? "Matching source · paused at the evidence frame" : "Separate take · body paused; times are not aligned";
+                SetAction(primary, sourceEnd > sourceStart ? "Play / pause footage" : "Play / pause full recording", sourceEnd > sourceStart ? (Action)evidence.TogglePlay : evidence.ToggleFullRecording);
+                SetAction(secondary, sourceEnd > sourceStart ? "Restart footage" : "Return to peak frame", sourceEnd > sourceStart ? (Action)evidence.Restart : evidence.ReturnToEvidence);
             }
             catch (Exception exception) { status.text = SafeError(exception); }
             finally { busy = false; }
@@ -548,6 +550,7 @@ namespace Physio.Viewer
         {
             if (busy || CaptureBusy) { status.text = "Finish the active capture or processing before leaving."; return; }
             error = "";
+            if (originalEvidenceOpen) { Show(screen == Screen.Finding ? Screen.Finding : Screen.Review, false); return; }
             switch (screen)
             {
                 case Screen.Options: Show(returnScreen); break;

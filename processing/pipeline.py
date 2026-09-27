@@ -4,6 +4,7 @@ import os
 import shutil
 import signal
 import stat
+import struct
 import subprocess
 import time
 from pathlib import Path
@@ -89,8 +90,47 @@ def _unavailable(test_type):
     if test_type == "barefoot":
         return {"name": "foot", "status": "unavailable", "detail":
                 "Automated foot assessment is incomplete. Manual standing dorsal-height geometry requires verified anatomical annotations, loading and calibration; none are supplied by this capture."}
+    if test_type == "walking":
+        return {"name": "movement", "status": "unavailable", "detail":
+                "Clinical gait assessment is unavailable: walking observations describe estimated geometry only. No validated gait classifier, step timing or calibrated distance measurements are installed."}
     return {"name": "movement", "status": "unavailable", "detail":
             "Exercise assessment is incomplete: no held-out evaluated Quest-compatible ELK/RTK classifier is installed. A reconstructed body and an empty findings list do not establish a correct repetition."}
+
+
+def _observations(replay, output, test_type, sidecar, limits):
+    feature = {"name": "observations", "status": "unavailable",
+               "detail": "Estimated movement observations require a supported full-body replay."}
+    if replay is None or test_type == "barefoot":
+        return {"observations": [], "methods": [], "artifacts": [], "feature": feature}
+    from processing.analysis.observations import (
+        METHOD_ID,
+        METHOD_VERSION,
+        generate_observations,
+    )
+
+    binary = replay["artifacts"]["skeleton_joints"]
+    path = output / binary["filename"]
+    expected = replay["frame_count"] * replay["joint_count"] * 12
+    if path.is_symlink() or path.stat().st_size != expected or expected > limits.max_output_bytes:
+        raise PipelineError("Observation geometry exceeds validated bounds.")
+    with path.open("rb") as stream:
+        raw = stream.read(expected + 1)
+    if len(raw) != expected:
+        raise PipelineError("Observation geometry changed after export.")
+    points = list(struct.iter_unpack("<3f", raw))
+    width = replay["joint_count"]
+    rows = [points[index:index + width] for index in range(0, len(points), width)]
+    observations, settings = generate_observations(replay, rows, test_type, sidecar)
+    settings_id = str(uuid4())
+    write_json(output / settings_id, settings, limits.max_metadata_bytes)
+    reasons = list(dict.fromkeys(item["reason"] for item in settings["unavailable_quantities"]))
+    detail = ("Estimated angles from the selected recording are available. These are model estimates, not clinical findings."
+              if observations else "No eligible pose geometry. " + " ".join(reasons))
+    return {"observations": observations,
+            "feature": {**feature, "status": "available" if observations else "unavailable", "detail": detail[:500]},
+            "methods": [{"method_id": METHOD_ID, "name": "Estimated pose geometry", "version": METHOD_VERSION,
+                         "settings_artifact_id": settings_id}],
+            "artifacts": [artifact(output / settings_id, "processing_settings", "application/json")]}
 
 
 class Pipeline:
@@ -125,24 +165,27 @@ class Pipeline:
                 replay, artifacts, provenance = export_native(native, output, *sources[replay_take],
                                                               result_id, self.settings.limits,
                                                               allow_unverified_pinhole=self.settings.allow_unverified_pinhole)
-            record = {"pipeline_version": "gvhmr-unity-1", "capture_to_loaded_latency": "Not measured by the service.",
+            observations = _observations(replay, output, capture["test_type"],
+                                         sources[replay_take][1] if replay_take else None, self.settings.limits)
+            record = {"pipeline_version": "gvhmr-unity-2", "capture_to_loaded_latency": "Not measured by the service.",
                       "processing_elapsed_seconds": time.monotonic() - started, "reconstruction": provenance,
                       "assessment": _unavailable(capture["test_type"])}
             write_json(output / settings_id, record, self.settings.limits.max_metadata_bytes)
             methods = [{"method_id": "capture_processing", "name": "GVHMR native export and capture evidence",
                         "version": "1", "settings_artifact_id": settings_id}]
-            features = [_unavailable(capture["test_type"]), microscopes["feature"]]
+            features = [_unavailable(capture["test_type"]), microscopes["feature"], observations["feature"]]
             if replay_take:
                 features = [{"name": "replay", "status": "available", "detail":
                              "Estimated body and skeleton from the selected source take. Model scale and world orientation are uncalibrated; clinical accuracy is unvalidated."}, *features]
             result = {
-                "schema_version": "1.0", "result_id": result_id,
+                "schema_version": "1.1", "result_id": result_id,
                 **{key: job[key] for key in ("job_id", "session_id", "patient_id", "test_type", "input_digest")},
                 **{key: capture[key] for key in ("protocol_id", "protocol_version")},
-                "created_at": now(), "pipeline_version": "gvhmr-unity-1", "validation_status": "research_demo_unvalidated",
-                "methods": methods + microscopes["methods"], "features": features, "findings": [],
+                "created_at": now(), "pipeline_version": "gvhmr-unity-2", "validation_status": "research_demo_unvalidated",
+                "methods": methods + microscopes["methods"] + observations["methods"],
+                "features": features, "findings": [], "observations": observations["observations"],
                 "microscopes": microscopes["microscopes"],
-                "artifacts": artifacts + microscopes["artifacts"] + [artifact(output / settings_id, "processing_settings", "application/json")],
+                "artifacts": artifacts + microscopes["artifacts"] + observations["artifacts"] + [artifact(output / settings_id, "processing_settings", "application/json")],
             }
             if replay is not None:
                 result["replay"] = {"source_take_id": replay_take, "manifest_artifact_id": artifacts[0]["artifact_id"]}

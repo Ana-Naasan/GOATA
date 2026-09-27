@@ -49,7 +49,7 @@ namespace Physio.Viewer
 
         private void Toggle() { if (!viewer.HasInputFocus) return; opened = !opened; shelf.SetActive(opened); }
         private void Capture() { workflow.OpenCaptureShortcut(); Close(); }
-        private void Replay() { workflow.OpenReplayShortcut(); Close(); }
+        private void Replay() { workflow.OpenInsightsShortcut(); Close(); }
         private void Options() { workflow.OpenOptions(); Close(); }
         private void Close() { opened = false; shelf.SetActive(false); }
         private void OnDestroy()

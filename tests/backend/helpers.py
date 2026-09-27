@@ -46,6 +46,9 @@ def build_capture(tmp_path, *, patient_id=None, session_id=None, test_type="elk"
         sidecar = json.loads(FIXTURE.read_bytes())
         sidecar["take_id"] = take_id
         sidecar["adapter"]["name"] = "synthetic_service_test_signature_only"
+        if test_type == "walking":
+            sidecar["capture"] = {**sidecar["capture"], "condition": "exercise", "view": "right",
+                                  "side": "not_applicable"}
         if test_type == "barefoot":
             sidecar["capture"] = {**sidecar["capture"], "side": "left", "view": "medial"}
         metadata = json.dumps(sidecar).encode()

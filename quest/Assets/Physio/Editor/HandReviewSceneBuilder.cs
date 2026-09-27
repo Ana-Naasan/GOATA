@@ -26,7 +26,7 @@ public static class HandReviewSceneBuilder
     private const string ButtonPath = UiSet + "Prefabs/Button/UnityUIButtonBased/PrimaryButton_IconAndLabel_UnityUIButton.prefab";
     private const string SecondaryButtonPath = UiSet + "Prefabs/Button/UnityUIButtonBased/SecondaryButton_IconAndLabel_UnityUIButton.prefab";
     private const float PanelWidth = 640f;
-    private const float PanelHeight = 860f;
+    private const float PanelHeight = 960f;
 
     public static void Configure(FixtureViewer viewer, OVRCameraRig rig)
     {
@@ -174,20 +174,24 @@ public static class HandReviewSceneBuilder
         contentLayout.childForceExpandHeight = false;
         contentLayout.childForceExpandWidth = true;
         content.GetComponent<LayoutElement>().flexibleHeight = 1;
+        var reviewTabs = CreateRow(content.transform, "Review sections");
+        var observationsTab = CreateButton(reviewTabs, "Observations");
+        var assessmentTab = CreateButton(reviewTabs, "Assessment");
+        reviewTabs.gameObject.SetActive(false);
         var body = CreateText(content.transform, "Page detail", "", 24f, 150f);
         body.overflowMode = TextOverflowModes.Overflow;
         var previews = new GameObject("Evidence previews", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(LayoutElement));
         previews.transform.SetParent(content.transform, false);
-        SetLayout(previews, 200f);
+        SetLayout(previews, 430f);
         var previewsLayout = previews.GetComponent<VerticalLayoutGroup>();
         previewsLayout.spacing = 8;
         previewsLayout.childControlHeight = previewsLayout.childControlWidth = true;
         previewsLayout.childForceExpandHeight = false;
         var videos = CreateRow(previews.transform, "Original and amplified");
-        SetLayout(videos.gameObject, 140f);
+        SetLayout(videos.gameObject, 350f);
         var original = CreatePreview(videos, "Original recording");
         var amplified = CreatePreview(videos, "Amplified recording");
-        var previewCaption = CreateText(previews.transform, "Evidence labels", "ORIGINAL", 22f, 52f);
+        var previewCaption = CreateText(previews.transform, "Evidence labels", "ORIGINAL", 20f, 72f);
         var list = new Button[4];
         for (var i = 0; i < list.Length; i++)
         {
@@ -196,7 +200,7 @@ public static class HandReviewSceneBuilder
             ButtonLabel(list[i]).rectTransform.offsetMin = new Vector2(20f, 4f);
         }
 
-        var replayRoot = CreateSurface("Floating replay timeline", rig, 620f, 290f, out var replayContent);
+        var replayRoot = CreateSurface("Floating replay timeline", rig, 620f, 328f, out var replayContent);
         // This surface stays outside the workspace visual hierarchy and is placed once when opened.
         var title = CreateText(replayContent, "Replay title", "SOURCE REPLAY", 22f, 0f);
         title.gameObject.SetActive(false);
@@ -205,6 +209,15 @@ public static class HandReviewSceneBuilder
         SetLayout(sliderRoot, 48f);
         var slider = sliderRoot.GetComponentInChildren<Slider>(true);
         if (slider == null) throw new InvalidOperationException("Meta UI Set slider missing.");
+        var intervalTrack = new GameObject("Selected source interval", typeof(RectTransform), typeof(LayoutElement));
+        intervalTrack.transform.SetParent(replayContent, false); SetLayout(intervalTrack, 6f);
+        var intervalRange = new GameObject("Evidence interval marker", typeof(RectTransform), typeof(Image));
+        intervalRange.transform.SetParent(intervalTrack.transform, false);
+        intervalRange.GetComponent<Image>().color = new Color(1f, .78f, .25f);
+        intervalRange.GetComponent<Image>().raycastTarget = false;
+        intervalRange.SetActive(false);
+        var evidenceLabel = CreateText(replayContent, "Selected evidence source", "", 20f, 24f);
+        evidenceLabel.color = new Color(1f, .86f, .5f);
         var time = CreateText(replayContent, "Source time", "0.00s", 24f, 26f);
         var playback = CreateRow(replayContent, "Playback");
         var previous = CreateButton(playback, "Frame −");
@@ -217,7 +230,7 @@ public static class HandReviewSceneBuilder
         var replaySettings = new SerializedObject(panel);
         RequireProperty(replaySettings, "externalLayout").boolValue = true;
         replaySettings.ApplyModifiedPropertiesWithoutUndo();
-        var status = CreateText(backplate, "Operation status", "", 23f, 64f);
+        var status = CreateText(backplate, "Operation status", "", 20f, 72f);
         status.color = new Color(.72f, .87f, 1f);
         status.overflowMode = TextOverflowModes.Overflow;
         var actions = CreateRow(backplate, "Page actions");
@@ -226,18 +239,20 @@ public static class HandReviewSceneBuilder
         var help = CreateText(backplate, "Placement help", "Drag the bar to move · Menu for options", 20f, 26f);
         help.color = new Color(.72f, .79f, .87f);
         FinishSurface(visuals, material, PanelHeight, root.transform);
-        FinishSurface(replayRoot, material, 290f);
+        FinishSurface(replayRoot, material, 328f);
         SetReferences(panel, ("playPauseButton", play), ("reverseButton", reverse),
             ("previousFrameButton", previous), ("nextFrameButton", next), ("restartButton", restart),
             ("speedButton", speed), ("seekSlider", slider), ("titleLabel", title),
-            ("statusLabel", replayStatus), ("timeLabel", time), ("playPauseLabel", ButtonLabel(play)),
+            ("statusLabel", replayStatus), ("timeLabel", time), ("evidenceLabel", evidenceLabel),
+            ("evidenceRange", intervalRange.GetComponent<RectTransform>()), ("playPauseLabel", ButtonLabel(play)),
             ("reverseLabel", ButtonLabel(reverse)), ("speedLabel", ButtonLabel(speed)),
             ("timelineRoot", replayRoot.transform), ("head", rig.centerEyeAnchor));
         SetReferences(workflow, ("viewer", viewer), ("heading", heading), ("context", context), ("body", body),
             ("status", status), ("back", back), ("options", options), ("primary", primary),
             ("secondary", secondary), ("replayControls", replayRoot), ("preview", original),
             ("amplifiedPreview", amplified), ("previewRoot", previews), ("previewCaption", previewCaption),
-            ("workspaceVisuals", visuals));
+            ("workspaceVisuals", visuals), ("reviewTabs", reviewTabs.gameObject),
+            ("observationsTab", observationsTab), ("assessmentTab", assessmentTab));
         var workflowSettings = new SerializedObject(workflow);
         var rowProperty = RequireProperty(workflowSettings, "rows");
         rowProperty.arraySize = list.Length;
@@ -321,7 +336,7 @@ public static class HandReviewSceneBuilder
         shelf.transform.localScale = Vector3.one * .5f;
         var buttons = CreateRow(shelfContent, "Hand actions");
         var capture = CreateButton(buttons, "Capture");
-        var replay = CreateButton(buttons, "Replay");
+        var replay = CreateButton(buttons, "Insights");
         var options = CreateButton(buttons, "Options");
         foreach (var button in new[] { capture, replay, options }) ButtonLabel(button).fontSize = 22f;
         AddButtonIcon(replay, "play.png");

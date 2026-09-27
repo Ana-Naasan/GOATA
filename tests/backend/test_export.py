@@ -19,8 +19,8 @@ def write_json(path, data):
     path.write_text(json.dumps(data), encoding="utf-8")
 
 
-def native_fixture(tmp_path, *, unverified_pinhole=False):
-    capture, media = build_capture(tmp_path)
+def native_fixture(tmp_path, *, unverified_pinhole=False, test_type="elk", joint_names=None):
+    capture, media = build_capture(tmp_path, test_type=test_type)
     inputs, native, output = (tmp_path / name for name in ("input", "native", "output"))
     (inputs / "files").mkdir(parents=True)
     native.mkdir()
@@ -47,21 +47,22 @@ def native_fixture(tmp_path, *, unverified_pinhole=False):
         "decoded_pts_seconds": [str((int(f["pts_ns"]) - 10**9) / 10**9) for f in sidecar["frames"]],
     }
     count = len(plan["selected_indices"])
+    joint_names = joint_names or ["pelvis", "spine1"]
     write_json(native / "selection.json", plan)
     write_json(native / "source-sidecar.json", sidecar)
     write_json(native / "parameters.json", {"test_only": True})
     write_json(native / "observations.json", {"test_only": True})
     (native / "triangles.u32").write_bytes(struct.pack("<3I", 0, 1, 2))
-    for name, width in (("vertices.f32", 3), ("joints.f32", 2)):
+    for name, width in (("vertices.f32", 3), ("joints.f32", len(joint_names))):
         values = [value for row in range(count) for point in range(width)
                   for value in (row + point / 10, point + .5, row + .25)]
         (native / name).write_bytes(struct.pack(f"<{len(values)}f", *values))
-    (native / "fitted_valid.u8").write_bytes(bytes([1]) * count * 2)
+    (native / "fitted_valid.u8").write_bytes(bytes([1]) * count * len(joint_names))
     handoff = {
         "schema_version": "gvhmr-native-1", "take_id": take["take_id"],
         "upstream_commit": UPSTREAM_COMMIT, "source_video_sha256": take["video"]["sha256"],
         "source_sidecar_sha256": take["frame_metadata"]["sha256"], "selection": "selection.json",
-        "frame_count": count, "geometry": geometry_metadata(["pelvis", "spine1"], [-1, 0], 3, 1),
+        "frame_count": count, "geometry": geometry_metadata(joint_names, [-1] + [0] * (len(joint_names) - 1), 3, 1),
         "array_layout": "little endian, frame-major then vertex/joint-major XYZ; triangle triples u32",
         "fitted_valid_layout": "u8 frame-major then 22 joints; 1 finite estimate, 0 unavailable",
         "asset_sha256": {"body_models/smplx/SMPLX_NEUTRAL.npz": "a" * 64},

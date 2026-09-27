@@ -53,9 +53,10 @@ namespace Physio.Capture
         {
             if (!Guid.TryParseExact(patient,"D",out _) || !Guid.TryParseExact(session,"D",out _))
                 throw new ArgumentException("Patient and session require UUIDs.");
-            if (!new[]{"elk","rtk","barefoot"}.Contains(test)) throw new ArgumentException("Unsupported test.");
+            if (!new[]{"elk","rtk","walking","barefoot"}.Contains(test)) throw new ArgumentException("Unsupported test.");
             if (!new[]{"front","left","right","rear","medial","other"}.Contains(view)) throw new ArgumentException("Unsupported view.");
             if (!new[]{"left","right","bilateral","not_applicable"}.Contains(side)) throw new ArgumentException("Unsupported side.");
+            if (test=="walking" && side!="not_applicable") throw new ArgumentException("Walking captures the full body.");
             if (test=="barefoot" && side!="left" && side!="right") throw new ArgumentException("Choose left or right foot.");
         }
 
@@ -115,6 +116,8 @@ namespace Physio.Capture
             ValidateIdentity(patient,session,test,(string)sidecar["capture"]["view"],(string)sidecar["capture"]["side"]);
             if(microscopeHold!=((string)sidecar["capture"]["condition"]=="steady_hold"))
                 throw new ArgumentException("Steady-hold evidence must be saved as a supplemental microscope take.");
+            if(test=="walking" && !microscopeHold && (string)sidecar["capture"]["condition"]!="exercise")
+                throw new ArgumentException("Walking requires an exercise take.");
             string take=(string)sidecar["take_id"];
             if(!Guid.TryParseExact(take,"D",out _)) throw new ArgumentException("Invalid take ID.");
             string sidecarPath=Path.Combine(directory,take+".json"),video=Path.Combine(directory,take+".mp4");
