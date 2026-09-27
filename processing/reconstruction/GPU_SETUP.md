@@ -347,3 +347,85 @@ visual/anatomical validation, clinical validation or held-out-person evaluation.
 ELK/RTK findings and automated foot assessment remain incomplete. The microscope
 implementation has not yet produced an accepted real Quest result. M1 and the
 required complete product flow remain incomplete.
+
+## Persistent FP32 experiment, September 27
+
+`experiments/persistent_inference/` contains the GPU-tested optimization runner.
+It is separate from the production service, which still starts a fresh inference
+process. This publication does not enable Quest streaming or change that service.
+The fixture runner accepts the public WHAM drone and its supplied calibration,
+not arbitrary uploaded recordings. It splits the first eight seconds into four
+independent takes. Tracker and temporal state reset between those takes; do not
+concatenate their reconstructions as a validated continuous movement.
+
+The runner retains YOLO, ViTPose, HMR2 features, GVHMR and SMPL-X on CUDA. Each is
+constructed once and reused for all four takes. Detector prediction/tracking state
+is fresh per take. Checkpoint identity hashing occurs once per process. Images
+are resized to 960 by 540; expensive observations are computed at 15 Hz and held
+on the 30 Hz model grid. Camera motion uses the full 30 Hz mapping. Omitted images
+are not identity-verified. Pose and feature batches remain two, with FP32 weights.
+CPU offload is an explicit separate mode, never an automatic OOM fallback.
+
+Historical measurements are in `rtx3070-fp32.json`. On the RTX 3070:
+
+- Subsequent two-second segments took 4.900, 5.008 and 5.108 seconds, including
+  local preparation and native export. No preview, network or Quest loading.
+- The persistent four-segment process took 36.252 seconds including initialization.
+  Four matching fresh processes took 84.948 seconds in total.
+- First output after process launch took 20.346 seconds. Preloading must finish
+  before a request to avoid this startup delay.
+- Peak PyTorch allocation was 6,190,825,984 bytes; peak reservation was
+  6,423,576,576 bytes, about 5.98 GiB. These are not whole-device memory readings.
+- The shared fixture split took 4.478 seconds, outside those process times.
+
+The original run used shared reconstruction helpers from `20cf164`. Publication
+is based on current main with separate CPU verification. Original GPU evidence
+and its source-inventory digest are preserved, not attributed to a new run.
+All eight native artifact hashes were checked for each of the eight outputs.
+Camera-motion estimates differed between persistent and fresh-process runs;
+full 3D numerical equivalence and accuracy remain unproven. The historical
+`all_resident_fit_proven` field is hardcoded false; completed-segment counts,
+constructor/use counts and allocator measurements are the actual fit evidence.
+FP16, larger batches, streaming ingestion and concurrent pipeline stages are
+separate unfinished experiments and are not included in this publication.
+
+CPU checks from the repository root:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$PWD" \
+  python3 -m unittest discover -s experiments/persistent_inference -v
+```
+
+Pinned Ultralytics source-body checks require installed version 8.2.42. Without
+it those checks explicitly skip. An operator may instead set
+`PHYSIO_ULTRALYTICS_SOURCE` to an inspected 8.2.42 `ultralytics` package directory;
+file hashes are checked against the committed identity inventory before execution.
+The remaining tests use CPU stand-ins and do not prove GPU correctness.
+
+Run in the existing model image with the same approved assets. Set `PROJECT`,
+`ASSETS`, `INPUT` and `OUTPUT` to absolute paths as above. `INPUT` must contain
+`drone_video.mp4` and `drone_calib.txt`; obtain them under their own terms, never
+commit them. The new `resident-001` directory must not already exist.
+
+```sh
+sudo docker run --rm --gpus all --network none --read-only \
+  --cap-drop ALL --security-opt no-new-privileges \
+  --user "$(id -u):$(id -g)" --memory 24g --cpus 8 --pids-limit 256 \
+  --tmpfs /tmp:rw,nosuid,nodev,size=2g \
+  --env PYTHONPATH=/experiment:/app:/opt/GVHMR \
+  --env PYTHONDONTWRITEBYTECODE=1 --env PYTHONHASHSEED=0 \
+  --mount "type=bind,src=$PROJECT/experiments/persistent_inference,dst=/experiment,readonly" \
+  --mount "type=bind,src=$PROJECT/processing,dst=/app/processing,readonly" \
+  --mount "type=bind,src=$ASSETS,dst=/opt/GVHMR/inputs/checkpoints,readonly" \
+  --mount "type=bind,src=$INPUT,dst=/input,readonly" \
+  --mount "type=bind,src=$OUTPUT,dst=/output" \
+  --workdir /opt/GVHMR --entrypoint /usr/bin/timeout physio-gvhmr:ee960bb \
+  --kill-after=30s 16m python /experiment/benchmark.py \
+  --video /input/drone_video.mp4 --calibration /input/drone_calib.txt \
+  --output /output/resident-001 --residency resident --timeout-s 900
+```
+
+`benchmark.json` records the persistent run followed by four fresh-process
+controls. Each worker records stage timings, constructor/use counts, input and
+asset identities, and failure diagnostics. A completed benchmark is not a live
+service, annotated-video output, Quest latency measurement or clinical result.

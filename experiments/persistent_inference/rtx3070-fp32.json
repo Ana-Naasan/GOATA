@@ -1,0 +1,66 @@
+{
+  "width": 960,
+  "height": 540,
+  "observation_hz": 15,
+  "model_hz": 30,
+  "segment_count": 4,
+  "requested_segment_seconds": 2,
+  "residency_mode": "resident",
+  "shared_input_split_s": 4.478434497999842,
+  "persistent_process_wall_s": 36.25232581900491,
+  "cold_process_wall_sum_s": 84.94840993700927,
+  "first_persistent_segment_s": 5.1634515059995465,
+  "first_persistent_output_since_launch_s": 20.346005152001453,
+  "cold_output_since_launch_s": [
+    20.61839193999913,
+    20.178839523003262,
+    20.347654614997737,
+    20.45447664400126
+  ],
+  "subsequent_persistent_segment_s": [
+    4.900250995000533,
+    5.008048372001213,
+    5.108399349999672
+  ],
+  "cold_definition": "same pipeline; fresh process/model deserialization per segment; OS cache not flushed",
+  "order": "persistent first, then cold sequentially",
+  "exclusions": [
+    "preview",
+    "network",
+    "timeline"
+  ],
+  "status": "historical_measured_evidence",
+  "gpu": "NVIDIA RTX 3070",
+  "precision": "FP32",
+  "source": "public WHAM drone, first four approximately two-second segments",
+  "base_commit": "20cf1641de58c84b594ed104832cabccf055e018",
+  "frozen_code_inventory_sha256": "f3f31ff969a180af21c0a627f8cf33324ab16a7b37b17bccad2b50a4f9240046",
+  "benchmark_json_sha256": "ff25b719af507522244e09a7b384e52333ed7c3e41e8615623350eab45374ce1",
+  "process_gpu_peaks_bytes": {
+    "allocated": 6190825984,
+    "reserved": 6423576576
+  },
+  "final_constructor_counts": {
+    "detector": 1,
+    "pose": 1,
+    "features": 1,
+    "gvhmr": 1,
+    "body": 1
+  },
+  "final_model_use_counts": {
+    "detector": 4,
+    "pose": 4,
+    "features": 4,
+    "gvhmr": 4,
+    "body": 4
+  },
+  "limitations": [
+    "Not service integration or Quest streaming.",
+    "No preview/render/network/Quest loading in measurements.",
+    "No clinical findings or accuracy validation.",
+    "Separate short takes; no cross-segment temporal or tracker continuity.",
+    "Unseeded VO differs across persistent and cold runs; 3D output equivalence unproven.",
+    "Original all_resident_fit_proven field was hardcoded false; measured four completed segments and constructor/use counts establish fit for this workload only.",
+    "Publication packaging and current-main CPU checks are separate from historical GPU execution."
+  ]
+}
