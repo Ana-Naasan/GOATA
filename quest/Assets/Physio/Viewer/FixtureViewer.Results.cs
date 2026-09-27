@@ -9,6 +9,8 @@ namespace Physio.Viewer
     public sealed partial class FixtureViewer
     {
         private bool lowOpacity;
+        private string[] findingJointNames = Array.Empty<string>();
+        private bool findingHighlightVisible;
         public bool HasInputFocus => hasInputFocus;
         public Guid? ReplayTakeId => replay?.Timeline.SourceTakeId;
 
@@ -40,6 +42,7 @@ namespace Physio.Viewer
             foreach (var bone in boneLines) { bone.gameObject.SetActive(false); Destroy(bone.gameObject); }
             jointObjects.Clear(); boneLines.Clear();
             replay = null; clock = null; mesh = null; meshObject = null; meshVertices = null;
+            findingJointNames = Array.Empty<string>(); findingHighlightVisible = false;
             SetReplayVisible(false);
             replayPanel?.ApplyState(HandReplayPanel.Empty);
         }
@@ -52,7 +55,31 @@ namespace Physio.Viewer
             if (replayDisplayRoot != null) replayDisplayRoot.gameObject.SetActive(visible);
         }
 
+        public void SelectFinding(FindingInterval interval, string[] jointNames)
+        {
+            if (clock == null) return;
+            clock = clock.SelectFinding(interval);
+            findingJointNames = (string[])jointNames.Clone();
+            UpdateFindingHighlight(true);
+            RenderCurrentFrame(true);
+        }
+
         public void Highlight(string[] jointNames)
+        {
+            findingJointNames = (string[])jointNames.Clone();
+            findingHighlightVisible = false;
+            ApplyJointHighlight(jointNames);
+        }
+
+        private void UpdateFindingHighlight(bool force = false)
+        {
+            var visible = findingJointNames.Length > 0 && clock?.IsFindingHighlighted == true;
+            if (!force && visible == findingHighlightVisible) return;
+            findingHighlightVisible = visible;
+            ApplyJointHighlight(visible ? findingJointNames : Array.Empty<string>());
+        }
+
+        private void ApplyJointHighlight(string[] jointNames)
         {
             if (replay == null) return;
             var names = new HashSet<string>(jointNames, StringComparer.Ordinal);

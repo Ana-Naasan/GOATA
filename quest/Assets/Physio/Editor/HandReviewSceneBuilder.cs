@@ -25,8 +25,8 @@ public static class HandReviewSceneBuilder
     private const string UiSet = Essentials + "Runtime/Sample/Objects/UISet/";
     private const string ButtonPath = UiSet + "Prefabs/Button/UnityUIButtonBased/PrimaryButton_IconAndLabel_UnityUIButton.prefab";
     private const string SecondaryButtonPath = UiSet + "Prefabs/Button/UnityUIButtonBased/SecondaryButton_IconAndLabel_UnityUIButton.prefab";
-    private const float PanelWidth = 920f;
-    private const float PanelHeight = 940f;
+    private const float PanelWidth = 640f;
+    private const float PanelHeight = 860f;
 
     public static void Configure(FixtureViewer viewer, OVRCameraRig rig)
     {
@@ -40,16 +40,22 @@ public static class HandReviewSceneBuilder
 
         var display = CreateReplayDisplay(material);
         var panel = CreatePanel(rig, material, viewer);
+        var workflow = panel.GetComponent<WorkflowPanel>();
+        var capture = CreateCaptureSurfaces(rig, material, workflow);
+        var handMenu = CreateHandMenu(rig, interactionRig, viewer, workflow);
+        SetReferences(workflow, ("captureOverlay", capture));
         SetReferences(viewer, ("replayDisplayRoot", display), ("replayPanel", panel),
             ("interactionRigRoot", interactionRig));
         var settings = new SerializedObject(viewer);
         SetVector(settings, "viewerOffset", new Vector3(.42f, -.70f, 1.10f));
-        SetVector(settings, "panelOffset", new Vector3(-.46f, -.10f, 1.25f));
+        SetVector(settings, "panelOffset", new Vector3(-.46f, -.10f, 1.15f));
         RequireProperty(settings, "initialDisplayScale").floatValue = .4f;
         settings.ApplyModifiedPropertiesWithoutUndo();
         RecordPrefabOverrides(rig.gameObject);
         RecordPrefabOverrides(display.gameObject);
         RecordPrefabOverrides(panel.gameObject);
+        RecordPrefabOverrides(capture.gameObject);
+        RecordPrefabOverrides(handMenu.gameObject);
     }
 
     private static void RemoveLegacyUi(FixtureViewer viewer)
@@ -143,41 +149,27 @@ public static class HandReviewSceneBuilder
 
     private static HandReplayPanel CreatePanel(OVRCameraRig rig, Material material, FixtureViewer viewer)
     {
-        var root = Instantiate(UiSet + "Prefabs/Backplate/EmptyUIBackplateWithCanvas.prefab", null);
-        root.name = "Physio Workspace";
+        // Keep persistence and result loading active while only the visible workspace is hidden.
+        var root = new GameObject("Physio Workspace");
         var panel = root.AddComponent<HandReplayPanel>();
         var workflow = root.AddComponent<WorkflowPanel>();
-        var canvasRoot = FindChild(root, "CanvasRoot").GetComponent<RectTransform>();
-        canvasRoot.localScale = Vector3.one * .001f;
-        canvasRoot.sizeDelta = new Vector2(PanelWidth, PanelHeight);
-        canvasRoot.GetComponent<Canvas>().worldCamera = rig.centerEyeAnchor.GetComponent<Camera>();
-        DisableIfPresent<HorizontalLayoutGroup>(canvasRoot.gameObject);
-        var backplate = FindChild(root, "UIBackplate").GetComponent<RectTransform>();
-        backplate.anchorMin = backplate.anchorMax = backplate.pivot = new Vector2(.5f, .5f);
-        backplate.anchoredPosition = Vector2.zero;
-        backplate.sizeDelta = new Vector2(PanelWidth, PanelHeight);
-        var layout = backplate.GetComponent<VerticalLayoutGroup>();
-        layout.padding = new RectOffset(28, 28, 24, 24);
-        layout.spacing = 12f;
-        layout.childControlHeight = layout.childControlWidth = true;
-        layout.childForceExpandHeight = false;
-        layout.childForceExpandWidth = true;
-        ConfigureTheme(root);
+        var visuals = CreateSurface("Patient and assessment details", rig, PanelWidth, PanelHeight, out var backplate);
+        visuals.transform.SetParent(root.transform, false);
 
         var navigation = CreateRow(backplate, "Navigation");
         var back = CreateButton(navigation, "Back");
-        var brand = CreateText(navigation, "Brand", "PHYSIO / MOTION", 26f, 64f);
+        var brand = CreateText(navigation, "Brand", "PHYSIO", 24f, 56f);
         brand.alignment = TextAlignmentOptions.Center;
         brand.color = new Color(.48f, .87f, 1f);
         var options = CreateButton(navigation, "Options");
-        var context = CreateText(backplate, "Patient and test", "LOCAL PATIENTS · QUEST 3", 24f, 60f);
+        var context = CreateText(backplate, "Patient and test", "LOCAL PATIENTS · QUEST 3", 23f, 56f);
         context.color = new Color(.72f, .79f, .87f);
-        var heading = CreateText(backplate, "Page heading", "Your patients", 34f, 48f);
+        var heading = CreateText(backplate, "Page heading", "Your patients", 30f, 44f);
         heading.fontStyle = FontStyles.Bold;
         var content = new GameObject("Page content", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(LayoutElement));
         content.transform.SetParent(backplate, false);
         var contentLayout = content.GetComponent<VerticalLayoutGroup>();
-        contentLayout.spacing = 12f;
+        contentLayout.spacing = 8f;
         contentLayout.childControlHeight = contentLayout.childControlWidth = true;
         contentLayout.childForceExpandHeight = false;
         contentLayout.childForceExpandWidth = true;
@@ -204,60 +196,194 @@ public static class HandReviewSceneBuilder
             ButtonLabel(list[i]).rectTransform.offsetMin = new Vector2(20f, 4f);
         }
 
-        var replayRoot = new GameObject("Review timeline", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(LayoutElement));
-        replayRoot.transform.SetParent(content.transform, false);
-        var replayLayout = replayRoot.GetComponent<VerticalLayoutGroup>();
-        replayLayout.spacing = 8f;
-        replayLayout.childControlHeight = replayLayout.childControlWidth = true;
-        replayLayout.childForceExpandHeight = false;
-        var title = CreateText(replayRoot.transform, "Replay title", "SOURCE REPLAY", 22f, 0f);
+        var replayRoot = CreateSurface("Floating replay timeline", rig, 620f, 290f, out var replayContent);
+        // This surface stays outside the workspace visual hierarchy and is placed once when opened.
+        var title = CreateText(replayContent, "Replay title", "SOURCE REPLAY", 22f, 0f);
         title.gameObject.SetActive(false);
-        var replayStatus = CreateText(replayRoot.transform, "Replay provenance", "", 22f, 28f);
-        var sliderRoot = Instantiate(UiSet + "Prefabs/Slider/LargeSlider.prefab", replayRoot.transform);
+        var replayStatus = CreateText(replayContent, "Replay provenance", "", 22f, 28f);
+        var sliderRoot = Instantiate(UiSet + "Prefabs/Slider/LargeSlider.prefab", replayContent);
         SetLayout(sliderRoot, 48f);
         var slider = sliderRoot.GetComponentInChildren<Slider>(true);
         if (slider == null) throw new InvalidOperationException("Meta UI Set slider missing.");
-        var time = CreateText(replayRoot.transform, "Source time", "0.00s", 24f, 26f);
-        var playback = CreateRow(replayRoot.transform, "Playback");
+        var time = CreateText(replayContent, "Source time", "0.00s", 24f, 26f);
+        var playback = CreateRow(replayContent, "Playback");
         var previous = CreateButton(playback, "Frame −");
         var play = CreateButton(playback, "Play", primary: true);
         var next = CreateButton(playback, "Frame +");
         var speed = CreateButton(playback, "Speed 1×");
-        var timing = CreateRow(replayRoot.transform, "Direction");
+        var timing = CreateRow(replayContent, "Direction");
         var reverse = CreateButton(timing, "Play backward");
         var restart = CreateButton(timing, "Restart");
         var replaySettings = new SerializedObject(panel);
         RequireProperty(replaySettings, "externalLayout").boolValue = true;
         replaySettings.ApplyModifiedPropertiesWithoutUndo();
-        var status = CreateText(backplate, "Operation status", "", 23f, 72f);
+        var status = CreateText(backplate, "Operation status", "", 23f, 64f);
         status.color = new Color(.72f, .87f, 1f);
         status.overflowMode = TextOverflowModes.Overflow;
         var actions = CreateRow(backplate, "Page actions");
         var primary = CreateButton(actions, "New patient", true);
         var secondary = CreateButton(actions, "Next");
-        var help = CreateText(backplate, "Placement help", "Pinch the bar to move · Menu brings this panel back", 22f, 30f);
+        var help = CreateText(backplate, "Placement help", "Drag the bar to move · Menu for options", 20f, 26f);
         help.color = new Color(.72f, .79f, .87f);
-        root.GetComponent<UIThemeManager>().ApplyCurrentTheme();
-        var handle = CreateHandle(root.transform, "Panel grab handle", new Vector3(0f, -.50f, -.018f),
-            new Vector3(.30f, .03f, .045f), material);
-        AddGrabInteractions(handle, root.transform, handle.GetComponent<Collider>(), allowScale: false);
-        AddGrabFeedback(handle, handle.GetComponent<Renderer>());
+        FinishSurface(visuals, material, PanelHeight, root.transform);
+        FinishSurface(replayRoot, material, 290f);
         SetReferences(panel, ("playPauseButton", play), ("reverseButton", reverse),
             ("previousFrameButton", previous), ("nextFrameButton", next), ("restartButton", restart),
             ("speedButton", speed), ("seekSlider", slider), ("titleLabel", title),
             ("statusLabel", replayStatus), ("timeLabel", time), ("playPauseLabel", ButtonLabel(play)),
-            ("reverseLabel", ButtonLabel(reverse)), ("speedLabel", ButtonLabel(speed)));
+            ("reverseLabel", ButtonLabel(reverse)), ("speedLabel", ButtonLabel(speed)),
+            ("timelineRoot", replayRoot.transform), ("head", rig.centerEyeAnchor));
         SetReferences(workflow, ("viewer", viewer), ("heading", heading), ("context", context), ("body", body),
             ("status", status), ("back", back), ("options", options), ("primary", primary),
             ("secondary", secondary), ("replayControls", replayRoot), ("preview", original),
-            ("amplifiedPreview", amplified), ("previewRoot", previews), ("previewCaption", previewCaption));
+            ("amplifiedPreview", amplified), ("previewRoot", previews), ("previewCaption", previewCaption),
+            ("workspaceVisuals", visuals));
         var workflowSettings = new SerializedObject(workflow);
         var rowProperty = RequireProperty(workflowSettings, "rows");
         rowProperty.arraySize = list.Length;
         for (var i = 0; i < list.Length; i++) rowProperty.GetArrayElementAtIndex(i).objectReferenceValue = list[i];
         workflowSettings.ApplyModifiedPropertiesWithoutUndo();
         LayoutRebuilder.ForceRebuildLayoutImmediate(backplate);
+        RecordPrefabOverrides(replayRoot);
         return panel;
+    }
+
+    private static SpatialCaptureOverlay CreateCaptureSurfaces(OVRCameraRig rig, Material material, WorkflowPanel workflow)
+    {
+        var root = new GameObject("Spatial Capture Controls");
+        var overlay = root.AddComponent<SpatialCaptureOverlay>();
+        var guidance = CreateSurface("Capture guidance — drag to place beside the patient", rig, 540f, 344f, out var content);
+        guidance.transform.SetParent(root.transform, false);
+        var context = CreateText(content, "Capture test and duration", "SAME MOVEMENT · EACH VIEW", 22f, 52f);
+        context.overflowMode = TextOverflowModes.Overflow;
+        context.color = new Color(.72f, .83f, .9f);
+        var title = CreateText(content, "Patient position instruction", "Start at the patient's RIGHT side", 28f, 56f);
+        title.fontStyle = FontStyles.Bold;
+        title.overflowMode = TextOverflowModes.Overflow;
+        var steps = CreateText(content, "Four separate capture views", "RIGHT   →   FRONT   →   BACK   →   LEFT", 22f, 32f);
+        steps.color = new Color(.48f, .87f, 1f);
+        var status = CreateText(content, "Capture state", "Confirm your position before recording.", 23f, 72f);
+        status.overflowMode = TextOverflowModes.Overflow;
+        var actions = CreateRow(content, "Capture navigation");
+        var retake = CreateButton(actions, "Retake last view");
+        var workspace = CreateButton(actions, "Options");
+        AddButtonIcon(workspace, "settings.png");
+
+        var dock = CreateSurface("Floating record control", rig, 360f, 138f, out var dockContent);
+        dock.transform.SetParent(root.transform, false);
+        var recordTime = CreateText(dockContent, "Capture elapsed and duration", "READY · 10 SECOND TAKE", 22f, 28f);
+        recordTime.alignment = TextAlignmentOptions.Center;
+        recordTime.color = new Color(.72f, .87f, 1f);
+        var record = CreateButton(dockContent, "Record right", true);
+        ButtonLabel(record).fontSize = 28f;
+        FinishSurface(guidance, material, 344f);
+        FinishSurface(dock, material, 138f);
+        SetReferences(overlay, ("workflow", workflow), ("head", rig.centerEyeAnchor),
+            ("guidanceRoot", guidance), ("guidanceTitle", title), ("guidanceContext", context),
+            ("guidanceSteps", steps), ("guidanceStatus", status), ("recordDock", dock),
+            ("recordButton", record), ("recordLabel", ButtonLabel(record)), ("recordTime", recordTime),
+            ("retakeButton", retake), ("workspaceButton", workspace));
+        return overlay;
+    }
+
+    private static HandSpatialMenu CreateHandMenu(OVRCameraRig rig, GameObject interaction, FixtureViewer viewer, WorkflowPanel workflow)
+    {
+        var root = new GameObject("Hand shortcuts");
+        var menu = root.AddComponent<HandSpatialMenu>();
+        // SDK 85 keeps native Hand providers on the interaction roots, not the visual LeftHand/RightHand objects.
+        var left = FindChild(interaction, "LeftInteractions").GetComponent<Hand>();
+        var right = FindChild(interaction, "RightInteractions").GetComponent<Hand>();
+        if (left == null || right == null) throw new InvalidOperationException("Native left and right hand data are required for hand shortcuts.");
+        var hand = root.AddComponent<DominantHandRef>();
+        hand.InjectAllDominantHandRef(left, right);
+        hand.SelectDominant = false;
+        var anchor = new GameObject("Native non-dominant wrist anchor");
+        anchor.transform.SetParent(root.transform, false);
+        var joint = anchor.AddComponent<HandJoint>();
+        joint.InjectHand(hand);
+        joint.HandJointId = HandJointId.HandWristRoot;
+        // The OpenXR offset/orientation matches Meta's current PalmMenu attachment.
+        joint.LocalPositionOffset = new Vector3(-.001f, 0, .08f);
+        joint.RotationOffset = new Quaternion(.5f, -.5f, .5f, .5f);
+        joint.MirrorOffsetsForLeftHand = true;
+        var jointSettings = new SerializedObject(joint);
+        RequireProperty(jointSettings, "_freezeRotationZ").boolValue = true;
+        jointSettings.ApplyModifiedPropertiesWithoutUndo();
+        var handVisuals = new GameObject("Hand shortcut visuals");
+        handVisuals.transform.SetParent(anchor.transform, false);
+        var launcher = CreateSurface("Hand menu launcher", rig, 160f, 88f, out var launcherContent);
+        launcher.transform.SetParent(handVisuals.transform, false);
+        launcher.transform.localScale = Vector3.one * .5f;
+        var launcherButton = CreateButton(launcherContent, "Menu", true);
+        var shelf = CreateSurface("Hand shortcut shelf", rig, 440f, 108f, out var shelfContent);
+        shelf.transform.SetParent(handVisuals.transform, false);
+        shelf.transform.localPosition = new Vector3(0, -.074f, 0);
+        shelf.transform.localScale = Vector3.one * .5f;
+        var buttons = CreateRow(shelfContent, "Hand actions");
+        var capture = CreateButton(buttons, "Capture");
+        var replay = CreateButton(buttons, "Replay");
+        var options = CreateButton(buttons, "Options");
+        foreach (var button in new[] { capture, replay, options }) ButtonLabel(button).fontSize = 22f;
+        AddButtonIcon(replay, "play.png");
+        AddButtonIcon(options, "settings.png");
+        launcher.GetComponent<UIThemeManager>().ApplyCurrentTheme();
+        shelf.GetComponent<UIThemeManager>().ApplyCurrentTheme();
+        LayoutRebuilder.ForceRebuildLayoutImmediate(launcherContent);
+        LayoutRebuilder.ForceRebuildLayoutImmediate(shelfContent);
+        SetReferences(menu, ("viewer", viewer), ("workflow", workflow), ("handRoot", handVisuals),
+            ("launcherButton", launcherButton), ("shelf", shelf), ("captureButton", capture),
+            ("replayButton", replay), ("optionsButton", options), ("hand", hand), ("head", rig.centerEyeAnchor));
+        shelf.SetActive(false);
+        handVisuals.SetActive(false);
+        return menu;
+    }
+
+    private static GameObject CreateSurface(string name, OVRCameraRig rig, float width, float height, out RectTransform backplate)
+    {
+        var root = Instantiate(UiSet + "Prefabs/Backplate/EmptyUIBackplateWithCanvas.prefab", null);
+        root.name = name;
+        var canvas = FindChild(root, "CanvasRoot").GetComponent<RectTransform>();
+        canvas.localScale = Vector3.one * .001f;
+        canvas.sizeDelta = new Vector2(width, height);
+        canvas.GetComponent<Canvas>().worldCamera = rig.centerEyeAnchor.GetComponent<Camera>();
+        DisableIfPresent<HorizontalLayoutGroup>(canvas.gameObject);
+        backplate = FindChild(root, "UIBackplate").GetComponent<RectTransform>();
+        backplate.anchorMin = backplate.anchorMax = backplate.pivot = new Vector2(.5f, .5f);
+        backplate.anchoredPosition = Vector2.zero;
+        backplate.sizeDelta = new Vector2(width, height);
+        var layout = backplate.GetComponent<VerticalLayoutGroup>();
+        layout.padding = new RectOffset(16, 16, 16, 16);
+        layout.spacing = 8f;
+        layout.childControlHeight = layout.childControlWidth = true;
+        layout.childForceExpandHeight = false;
+        layout.childForceExpandWidth = true;
+        ConfigureTheme(root);
+        return root;
+    }
+
+    private static void FinishSurface(GameObject root, Material material, float height, Transform target = null)
+    {
+        root.GetComponent<UIThemeManager>().ApplyCurrentTheme();
+        var handle = CreateHandle(root.transform, "Drag to move", new Vector3(0, -height * .0005f - .022f, -.018f),
+            new Vector3(.18f, .025f, .04f), material);
+        AddGrabInteractions(handle, target != null ? target : root.transform, handle.GetComponent<Collider>(), allowScale: false);
+        AddGrabFeedback(handle, handle.GetComponent<Renderer>());
+        LayoutRebuilder.ForceRebuildLayoutImmediate(FindChild(root, "UIBackplate").GetComponent<RectTransform>());
+    }
+
+    private static void AddButtonIcon(Button button, string fileName)
+    {
+        var icon = FindChild(button.gameObject, "Icon");
+        icon.gameObject.SetActive(true);
+        var image = icon.GetComponent<Image>();
+        image.sprite = LoadRequired<Sprite>(Essentials + "Runtime/Sample/Textures/Icons/" + fileName);
+        image.raycastTarget = false;
+        image.preserveAspect = true;
+        var rect = image.rectTransform;
+        rect.anchorMin = rect.anchorMax = new Vector2(0, .5f);
+        rect.anchoredPosition = new Vector2(24f, 0);
+        rect.sizeDelta = new Vector2(24f, 24f);
+        ButtonLabel(button).rectTransform.offsetMin = new Vector2(42f, 4f);
     }
 
     private static RawImage CreatePreview(Transform parent, string name)
@@ -357,7 +483,7 @@ public static class HandReviewSceneBuilder
         layout.childControlHeight = true;
         layout.childForceExpandWidth = true;
         layout.childForceExpandHeight = true;
-        SetLayout(row, 64f);
+        SetLayout(row, 56f);
         return row.transform;
     }
 
@@ -375,7 +501,7 @@ public static class HandReviewSceneBuilder
         foreach (var child in root.GetComponentsInChildren<Transform>(true))
             if (child.name == "Subtitle" || child.name == "Icon" || child.name == "Gap") child.gameObject.SetActive(false);
         ExpandButtonLabel(button, label);
-        SetLayout(root, 64f);
+        SetLayout(root, 56f);
         return button;
     }
 

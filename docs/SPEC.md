@@ -91,7 +91,7 @@ Opening history restores the saved result version. Reprocessing creates another 
 8. Ask for a retake when the relevant region leaves frame or required evidence is missing.
 9. Save the capture locally before submission. Processing starts after the required captures finish.
 
-Prefer the minimum number of views that the tested method needs. Prototype with a front take and side take, then fix the actual required view list from the protocol and model test. Do not advertise a rear view as measured when it was inferred. Avoid hard-coding an arbitrary distance before testing framing on Quest.
+For the approved movement-capture prototype, guide four separate recordings in this order: **patient’s right → front → back → left**. Default to ten seconds; allow five, ten or fifteen seconds before recording the first view, then keep the chosen duration for the assessment. Use a visible countdown and manual Record action at each position. This duration and view sequence are interface settings, not an evaluated clinical protocol. Keep seated ELK/RTK instructions; the room presentation does not introduce a walking assessment. Barefoot capture uses close-ups around one selected foot, with fixed anatomical left/right identity and standing condition. It does not request torso repetitions or generate a full-body replay from foot close-ups. Avoid hard-coding an arbitrary distance before testing framing on Quest.
 
 ### 4.2 Seated flank stretch — `elk`
 
@@ -118,6 +118,8 @@ Full-body estimation stops accepting results during close-ups. Review opens the 
 ### 4.5 Guided multiple views
 
 Repeated movements from different viewpoints are separate performances, not synchronized multi-camera footage. Choose one source take for replay and event timing. Other views may help check shape or compare observations; combining shape is optional until verified. Never average repetitions into a motion that conceals actual differences.
+
+Save completed views in a resumable local draft under the same patient/test session. Retaking a view preserves its earlier original. Show which views are saved and which remain; advance only after saving succeeds. Require a deliberate Record action after moving. Seal the selected takes into one immutable capture only when the required sequence is complete. Make the selected replay source visible.
 
 ### 4.6 Capture quality and interruptions
 
@@ -146,7 +148,11 @@ macOS can build an Android APK when Unity Android Build Support, SDK/NDK and Ope
 
 Use Meta Horizon OS UI Set through Interaction SDK Essentials. Start with `UISetPatterns` or `UISetExamples`; preserve its backplates, themes and interaction feedback. Use supplied buttons, sliders, toggles, dropdowns, text inputs and dialogs. Enable the system keyboard for patient names.
 
-One main movable panel contains navigation and details. Place it beside the blue body. Use a visible Back action, patient/test context and an Options button. Keep one finding expanded. Keep text readable against both bright and dark passthrough backgrounds.
+The approved spatial layout uses full room passthrough during capture. A compact guidance card sits beside the participant, with the current patient-relative viewpoint, take duration and progress. A separate floating Record/Stop dock remains accessible. The patient is viewed directly in the room; a small camera preview is not the primary capture surface. Camera framing guidance must reflect the actual recorded field of view; the camera does not record everything visible through passthrough.
+
+Keep patient/history/options and finding details in a movable panel opened when needed. During replay, place an independent movable timeline beneath the blue body. Use a visible Back action, patient/test context and an Options button. Keep one finding expanded. Keep text readable against both bright and dark passthrough backgrounds.
+
+Provide an optional hand shortcut shelf near the wrist/index base using the native hand anchor and UI Set controls. A deliberate palm reveal exposes Capture, Replay and Options. Revealing the shelf never starts recording. Hide it when tracking or input focus is invalid, and retain equivalent floating controls for one-hand/controller use. Quest 3 has no eye tracking; do not describe head-direction checks as measured eye gaze.
 
 Use the supplied ray/poke canvas integration and hand/controller rig. C# application methods respond to UI events; do not reimplement pointer targeting or gesture recognition. Keep hand and controller paths equivalent for required controls.
 

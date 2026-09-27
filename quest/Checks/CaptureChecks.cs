@@ -9,14 +9,30 @@ static class CaptureChecks
     static int count;
     static void Check(bool ok) { count++; if (!ok) throw new Exception("Capture check " + count); }
     static void Reject(Action action) { try { action(); } catch (ArgumentException) { count++; return; } throw new Exception("Expected rejection"); }
+    static void RejectState(Action action) { try { action(); } catch (InvalidOperationException) { count++; return; } throw new Exception("Expected state rejection"); }
     static void Main(string[] args)
     {
         var root = Path.Combine(Path.GetTempPath(), "capture-check-" + Guid.NewGuid());
         Directory.CreateDirectory(root);
         try
         {
+            CheckReadbacks();
             var patient = Guid.NewGuid().ToString(); var session = Guid.NewGuid().ToString();
             var take = Guid.NewGuid().ToString();
+            Check(CaptureBundle.TargetDurationNanoseconds(10)==10_000_000_000);
+            Check(CaptureBundle.TargetDurationNanoseconds(15)==15_000_000_000);
+            Reject(()=>CaptureBundle.TargetDurationNanoseconds(double.NaN));
+            Reject(()=>CaptureBundle.TargetDurationNanoseconds(double.PositiveInfinity));
+            Reject(()=>CaptureBundle.TargetDurationNanoseconds(.5));
+            Reject(()=>CaptureBundle.TargetDurationNanoseconds(15.001));
+            Reject(()=>CaptureBundle.TargetDurationNanoseconds(20));
+            Check(!CaptureBundle.DurationComplete(0,9_966_666_665,10_000_000_000));
+            Check(CaptureBundle.DurationComplete(0,9_966_666_666,10_000_000_000));
+            Check(CaptureBundle.DurationComplete(1_790_472_000_000_000_000,1_790_472_009_966_666_666,10_000_000_000));
+            Check(!CaptureBundle.DurationComplete(10,9,10_000_000_000));
+            Check(!CaptureBundle.DurationComplete(-1,10_000_000_000,10_000_000_000));
+            Check(!CaptureBundle.DurationComplete(0,14_966_666_000,15_000_000_000));
+            Check(CaptureBundle.DurationComplete(0,14_966_667_000,15_000_000_000));
             var frames = new[] { new CapturedFrame(0, 1790472000123456000), new CapturedFrame(2, 1790472000156789000) };
             var metadata = CaptureBundle.Sidecar(take, 640, 480, frames, new long[] {0,33333}, "front", "seated", "not_applicable", false, 500, 510, 320, 240, new long[] {1790472000140000000});
             Check((string)metadata["frames"][1]["pts_ns"] == "1790472000156789000");
@@ -97,5 +113,55 @@ static class CaptureChecks
             Console.WriteLine($"Capture checks passed: {count}");
         }
         finally { Directory.Delete(root,true); }
+    }
+
+    static void CheckReadbacks()
+    {
+        Reject(()=>new CaptureReadbacks(0));
+        Reject(()=>new CaptureReadbacks(8_294_401));
+        var queue=new CaptureReadbacks(4);
+        Check(queue.TryReserve(0,100,out var first));
+        Check(queue.TryReserve(1,200,out var second));
+        Check(queue.TryReserve(2,300,out var third));
+        Check(queue.Count==3 && !queue.TryReserve(3,400,out _));
+        Check(!ReferenceEquals(first.Pixels,second.Pixels) && !ReferenceEquals(first.Pixels,third.Pixels));
+        first.Pixels[0]=1;second.Pixels[0]=2;third.Pixels[0]=3;
+        RejectState(()=>queue.Release(first));
+        Check(queue.Complete(third,false) && !queue.TryPeekReady(out _));
+        Check(!queue.Complete(third,false) && !queue.IsPending(third));
+        Check(!queue.IsPending(null));
+        RejectState(()=>queue.Release(third));
+        Check(queue.Complete(second,true) && !queue.TryPeekReady(out _));
+        Check(queue.Complete(first,false));
+        Check(queue.TryPeekReady(out var ready) && ReferenceEquals(ready,first));
+        Check(ready.FrameId==0 && ready.SourceNanoseconds==100 && ready.Pixels[0]==1 && !ready.Failed);
+        queue.Release(first);
+        Check(queue.TryReserve(3,400,out var fourth) && ReferenceEquals(first.Pixels,fourth.Pixels));
+        Check(!queue.Complete(first,false)); // An old callback cannot complete a reused slot.
+        Check(queue.TryPeekReady(out ready) && ReferenceEquals(ready,second) && ready.Failed && ready.Pixels[0]==2);
+        queue.Release(second);
+        Check(queue.TryPeekReady(out ready) && ReferenceEquals(ready,third) && ready.SourceNanoseconds==300 && ready.Pixels[0]==3);
+        queue.Release(third);
+        queue.StopAccepting();
+        Check(!queue.TryReserve(4,500,out _) && queue.Count==1);
+        Check(queue.Complete(fourth,false) && queue.TryPeekReady(out ready) && ReferenceEquals(ready,fourth));
+        queue.Release(fourth);
+        Check(queue.Count==0 && !queue.TryPeekReady(out _));
+
+        var cancelled=new CaptureReadbacks(4);
+        cancelled.TryReserve(0,100,out var old);
+        cancelled.TryReserve(1,200,out var oldNext);
+        cancelled.Complete(oldNext,false);
+        var abandoned=cancelled.Cancel();
+        Check(abandoned.Length==2 && ReferenceEquals(abandoned[0],old) && ReferenceEquals(abandoned[1],oldNext));
+        Check(cancelled.IsCancelled && cancelled.Count==0 && cancelled.Cancel().Length==0);
+        Check(!cancelled.Complete(old,false) && !cancelled.TryReserve(2,300,out _) && !cancelled.TryPeekReady(out _));
+        var replacement=new CaptureReadbacks(4);
+        Check(replacement.TryReserve(0,100,out var fresh) && !ReferenceEquals(fresh.Pixels,old.Pixels));
+        Check(!replacement.Complete(old,false) && !replacement.TryPeekReady(out _));
+        Reject(()=>replacement.TryReserve(0,200,out _));
+        Reject(()=>replacement.TryReserve(1,100,out _));
+        Reject(()=>new CaptureReadbacks(4).TryReserve(-1,0,out _));
+        Reject(()=>new CaptureReadbacks(4).TryReserve(0,-1,out _));
     }
 }

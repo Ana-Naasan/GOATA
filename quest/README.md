@@ -1,10 +1,10 @@
 # Quest app
 
-**Last updated:** September 26, 2026. The patient/capture/processing/review flow is
-implemented with native Meta UI Set controls. Final integration source `636746d`
-built successfully as an ARM64 APK (85,431,296 bytes), installed and cold-launched.
-Startup logs show no captured C# exceptions and placement awaiting a tracked head. Wearer acceptance of the
-latest layout, gestures and fresh recording-to-replay flow remains pending.
+**Last updated:** September 26, 2026. The original integration merged in PR #10
+(`main` baseline `fbbe24f`, including Mohammad's `20cf164`). Follow-up source
+`cba5dc9` built and installed as build 6. Two cold launches each recorded all 90
+synthetic frames at 30 fps with verified mux timestamps and zero drops.
+Real-camera recording, wearer acceptance and clinical requirements remain incomplete.
 
 ## Open and build
 
@@ -54,19 +54,30 @@ focus and valid tracked position/orientation instead of using an untracked pose.
   stay on the headset; UUIDs isolate patients, including identical display names.
 - **Tests:** ELK seated flank stretch, RTK seated torso rotation or barefoot.
   Captures require consent confirmation and show test/view/side context.
-- **Capture:** native permission request, preview/countdown, stop and interruption
-  recovery. Keep the participant and required body region in frame. Current
-  capture is bounded to 600 frames/about 20 seconds. This is a prototype limit,
-  not a clinically established recording protocol.
+- **Capture:** choose 5, 10 or 15 seconds per take, default 10, then record the
+  patient's **right → front → back → left** views. Duration is fixed after the
+  first saved view. Guidance and a separate Record control float beside the
+  participant; the workspace hides during capture. Permission, countdown,
+  automatic completion, stop, interruption and retry are explicit states.
+- **Saved views:** each performance stays separate with immutable originals and
+  retakes. Progress and selected takes recover after restart/crash. Choose one
+  ELK/RTK take for 3D replay after all four views are saved. Other views remain
+  evidence; they are never fused into a simultaneous performance.
+- **Barefoot capture:** four standing close-ups around one selected foot, with
+  anatomical side fixed after the first saved view. No body replay is produced.
+  This collection sequence is not a clinically validated foot protocol.
 - **Processing:** enter the HTTPS service URL and token through Options/system
   keyboard. The token stays in memory; enter it again after app restart. The URL
   is saved. Processing reports actual stages, retry errors and unavailable methods.
 - **Review:** play/pause, full timeline, reverse, frame steps, restart and
   0.25×/0.5×/1×/1.5×/2× speed. Body and skeleton share one display transform;
   moving/resizing them never changes stored measurements.
-- **Evidence:** a finding can drive replay only for the matching take. Other-take
-  original video opens with the body paused. Video seeking uses the retained
-  encoded timestamp mapping. Foot results without replay clear any earlier body.
+- **Evidence:** matching-take findings seek the replay, show the detached timeline
+  and highlight joints only inside the finding interval. Other-take original
+  video opens with the body paused. Details show method/version, quality,
+  measurements and limitations. Video seeking uses the encoded timestamp mapping.
+  Foot results without replay clear any earlier body. These controls do not create
+  findings: current processing still returns none and explains unavailable methods.
 - **Microscope:** add a separate steady-hold recording to the selected test.
   A new saved assessment preserves the primary take and earlier versions.
   Source/amplified views show their own interval, crop, settings and limitations.
@@ -88,35 +99,52 @@ real capture-to-display benchmark has been recorded yet.
 
 ## Native interface and input
 
-`Assets/Physio/Editor/HandReviewSceneBuilder.cs` builds a dark UI Set workspace
-with cyan emphasis, persistent patient/test context and explicit primary actions.
-The panel is 0.92 × 0.94 metres, initially about 1.25 metres in front of the user,
-and can be repositioned. These are implementation values, not accepted comfort
-or readability measurements.
+`Assets/Physio/Editor/HandReviewSceneBuilder.cs` uses Meta's stock UI Set prefabs
+and theme. A compact workspace handles patient/test details, with independent
+spatial widgets for capture and playback:
+
+| Surface | Current dimensions |
+|---|---|
+| Patient/assessment workspace | 0.64 × 0.86 m; hidden during room capture. |
+| Guidance | 0.54 × 0.344 m; placed above/left and draggable. |
+| Record dock | 0.36 × 0.138 m; separate elapsed-time and Record/Stop control. |
+| Replay timeline | 0.62 × 0.29 m; separate from the details workspace. |
+
+These are source values, not accepted comfort/readability measurements. Guidance
+updates at 10 Hz; listeners bind once. It explicitly warns that the recorded
+camera field of view is smaller than passthrough. Projected calibrated framing
+has not been implemented or validated.
 
 The scene uses Meta's `OVRInteractionComprehensive` rig, OpenXR hand skeletons,
 ray/poke buttons, native grab/rotation and two-hand scaling. Locomotion is disabled
 for this stationary MR workflow. Smaller/Larger controls provide a one-hand
 alternative. Standard hand-menu input reads SDK `HandStatus.MenuPressed` because
 Android disables legacy pinch-button mapping; controller Start is also supported.
+A native `DominantHandRef`/`HandJoint` wrist anchor on the non-dominant hand adds
+optional Capture/Replay/Options shortcuts. The launcher appears only after 150 ms
+of valid tracked/confident hand data, focus and suitable palm/head orientation.
+Floating controls remain available without using the hand shortcut.
+
 Focus loss pauses replay, disables interaction and interrupts capture. Permission
 callbacks from a cancelled request cannot restart recording.
 
 The layout follows [Meta UI Set](https://developers.meta.com/horizon/documentation/unity/unity-isdk-uiset/),
 [panel guidance](https://developers.meta.com/horizon/design/panels/) and
 [UI Set setup](https://developers.meta.com/horizon/documentation/unity/unity-isdk-create-uiset-ui/).
-Native components and readable source layouts still require headset checks for
-reach, target size, contrast, one-handed navigation and visible focus.
+The official [Meta agentic tools](https://github.com/meta-quest/agentic-tools)
+guidance was also inspected at revision prefix `3a8553d`. Native components and
+source layouts still require headset checks for reach, target size, contrast,
+one-handed navigation and visible focus.
 
 ## Source map
 
 | Directory | Responsibility |
 |---|---|
-| `Assets/Physio/Capture/` | Camera/permission lifecycle, exact source timestamps, sidecars and capture bundles. |
-| `Assets/Plugins/Android/` | AVC encoder, MP4 mux/extractor and YUV conversion. |
-| `Assets/Physio/Workflow/` | Private patient/session store, authenticated processing client, result/cache validation. |
+| `Assets/Physio/Capture/` | Camera/permission lifecycle, exact timestamps, three-slot ordered `CaptureReadbacks`, reusable JNI submission, capture bundles and explicit synthetic benchmark. |
+| `Assets/Plugins/Android/` | AVC encoder, MP4 mux/extractor, bulk contiguous-luma conversion and six private conversion warmups before readiness. |
+| `Assets/Physio/Workflow/` | Private patient/session store, guided-view recovery, authenticated processing client, result/cache validation. |
 | `Assets/Physio/Replay/` | Bounded importer, original-time cursor, validity/gaps and take-isolated findings. |
-| `Assets/Physio/Viewer/` | Body/skeleton rendering, UI flow, evidence playback and native input bindings. |
+| `Assets/Physio/Viewer/` | Body/skeleton rendering, spatial capture widgets, hand shortcuts, evidence playback and native input bindings. |
 | `Assets/Physio/Editor/` | Scene generation and reproducible Android build. |
 | `Checks/` | Runnable C# harnesses and synthetic Java encoder/YUV checks. |
 | `Assets/Resources/Physio/` | Explicitly authored diagnostic fixture and mannequin; no participant data. |
@@ -142,24 +170,115 @@ dotnet run --project quest/Checks/CaptureChecks.csproj -p:UseSharedCompilation=f
 dotnet run --project quest/Checks/WorkflowChecks.csproj -p:UseSharedCompilation=false
 dotnet run --project quest/Checks/DemoChecks.csproj -p:UseSharedCompilation=false
 dotnet run --project quest/Checks/UIEvidenceChecks.csproj -p:UseSharedCompilation=false
+dotnet run --project quest/Checks/SpatialCaptureChecks.csproj -p:UseSharedCompilation=false
 ```
 
-All six ran serially and passed **136 / 173 / 54 / 283 / 19,827 / 12** checks.
+Follow-up checks passed: **100 capture**, **363 workflow** and **20 spatial
+presentation** checks; the workflow count was independently rebuilt and rerun
+in C# review. The UI checkpoint also passed **12 evidence / 136 replay** checks.
+Earlier unchanged importer/demo checkpoints passed **173 / 19,827** checks.
 `Checks/Directory.Build.props` isolates each project's output to prevent one
-harness from accidentally running another's cached apphost.
+harness from running another's cached apphost.
 
-Coverage checkpoints: importer/data **98.56% lines / 87.71% branches**; capture
-logic **100% / 98%** at 53 checks; workflow assembly **99.6% / 81.47%** at 282
-checks. Later checks above passed; those coverage percentages describe the
-preceding snapshots. Unity rendering, native Android and physical interaction
-are outside these console coverage measurements.
+`CaptureBundle` + `CaptureReadbacks` coverage is **100% lines (146/146)** and
+**98.59% branches (140/142)**; the queue alone is 100% lines/branches. This excludes
+Unity recorder/benchmark, GPU, JNI and native code. `Physio.Workflow` coverage is
+**99.28% lines / 83.33% branches**, excluding Replay/Unity/native; its ignored
+report is `Checks/coverage/workflow-guided/`. Historical importer/data coverage
+is **98.56% / 87.71%**. None is a whole-app or device-acceptance measurement.
+
+Pure Java checks cover the actual `PhysioYuv420` conversion. Run from the repo
+root with the installed Unity JDK:
+
+```sh
+quest_jdk=/Applications/Unity/Hub/Editor/6000.0.66f2/PlaybackEngines/AndroidPlayer/OpenJDK
+quest_yuv_checks="$(mktemp -d /tmp/physio-yuv-checks.XXXXXX)"
+"$quest_jdk/bin/javac" -Xlint:all -Werror -d "$quest_yuv_checks" \
+  quest/Assets/Plugins/Android/PhysioYuv420.java \
+  quest/Checks/CaptureColorChecks.java quest/Checks/CaptureYuvChecks.java
+"$quest_jdk/bin/java" -cp "$quest_yuv_checks" CaptureColorChecks
+"$quest_jdk/bin/java" -cp "$quest_yuv_checks" CaptureYuvChecks
+```
+
+Strict compilation, four color checks and **1,600 exact scalar/bulk comparisons**
+passed. Layouts include heap/direct and shared UV/VU buffers, pixel/row strides,
+offsets, padding, limits and vertical flip. Short scratch/plane-limit checks also
+pass; buffer positions are preserved. A reused-scratch check verifies that warmup
+pixels cannot enter the next frame. These checks do not open a camera.
 
 Normal startup opens patients. The six-second authored mannequin is an explicitly
 selected diagnostic demo: 121 frames, 21 joints, 1,634 vertices, 3,192 triangles.
 It never substitutes for a patient's result. The four-frame tetrahedron remains
 a coordinate/validity fixture. Neither produces clinical findings.
 
-## Device and real-data evidence
+## Recording performance — two synthetic app runs passed
+
+The previous app fell from about 72 Hz to 3 Hz during recording. Current source
+keeps 1280×960, reusable signed-byte buffers and cached JNI submission.
+`CaptureReadbacks` allows at most three overlapping requests and submits them
+in source order. The native encoder now bulk-writes contiguous Y rows using one
+reusable two-row scratch array; strided Y and U/V keep scalar writes. Color math,
+chroma averaging, orientation and source/mux identity are unchanged. The encoder
+also performs six conversions into private synthetic buffers before accepting
+source frames. These warmups never enter the codec queue or recording counts.
+
+Evidence root: `/Users/baderasadi/Library/Caches/HTH/spatial-proof/`.
+`build-final-6.log` succeeded with exit 0. All 30 source hashes in
+`frozen-source-6.json` match implementation commit `cba5dc9`. The installed APK
+is **85,550,160 bytes**, SHA-256
+`288773c47457da9109bf3a5446d3fcb19e566e072d2d7a664836d9b863972356`.
+
+| Final app measurement | First cold launch | Repeat cold launch |
+|---|---|---|
+| Log / PID / time (EDT) | `unity-benchmark-6.log` / 11437 / 21:45:02–05 | `unity-benchmark-6-repeat.log` / 11854 / 21:45:26–29 |
+| Observed / read back / submitted / encoded | 90 / 90 / 90 / 90 | 90 / 90 / 90 / 90 |
+| Missed / maximum pending | 0 / 2 | 0 / 2 |
+| Source span / effective rate / wall time | 2.967 s / 30.00 fps / 3.428 s | 2.967 s / 30.00 fps / 3.415 s |
+| Average callback / copy / JNI; maximum JNI | 39.769 / 0.469 / 2.412 ms; 3.435 ms | 39.823 / 0.486 / 2.438 ms; 3.298 ms |
+| Native warmup count / duration | 6 / 269.836 ms | 6 / 264.045 ms |
+| Actual conversion count / total / maximum | 90 / 2762.681 / 37.307 ms | 90 / 2773.694 / 35.653 ms |
+| App FPS samples during recording / target | 71, 71, 73 / 72 | 70, 72, 72 / 72 |
+| Final mux / complete without drops | Verified / True | Verified / True |
+
+Earlier probes explain the changes: `unity-benchmark.log` encoded 52/90 with
+38 readback misses. The bounded-readback counter build (`unity-benchmark-4.log`)
+delivered all 90 to JNI but encoded 53, with 37 `encoder_busy` misses. Bulk-luma
+build 5 (`unity-benchmark-5.log`) encoded 88/90; missing source IDs 3 and 5 were
+confirmed from mux timestamps. Build 6's pre-readiness warmup removed those losses
+in both measured synthetic runs. Earlier native-only trials and source hashes
+remain under `/Users/baderasadi/Library/Caches/HTH/recording-perf/production-bulk/`.
+Code, C#, Java and security review completed.
+
+Both final app runs had an untracked head pose. The diagnostic excludes camera
+delivery, per-frame journal writes, the actual capture page and participant
+processing. It covers three seconds of synthetic input, so sustained real-camera
+performance, physical hand/layout acceptance and M1 remain incomplete. Native
+hand configuration passed `scene-hand-verified.log`; this does not establish
+wearer interaction. The app was relaunched normally after both diagnostics.
+
+To repeat the development diagnostic after installation, use its explicit intent.
+It exercises GPU texture → readback → JNI → encoder without opening a camera:
+
+```sh
+adb shell am force-stop com.hth.physio.fixture
+adb shell am start -a android.intent.action.MAIN \
+  -c android.intent.category.LAUNCHER -p com.hth.physio.fixture \
+  --ez physio_capture_benchmark true
+adb logcat -d -v threadtime -s Unity PhysioCapture VrApi
+```
+
+It waits five seconds for startup, then schedules 90 synthetic 1280×960 frames
+at 30 fps. Inspect `PHYSIO_CAPTURE_METRICS`, `PHYSIO_NATIVE_TIMING`,
+`PHYSIO_CAPTURE_BENCHMARK` and app-PID `VrApi` samples for admission, conversion,
+missed counts, mux verification and rendering. It creates no patient
+profile or clinical evidence; its temporary output is explicitly synthetic.
+The encoder's six private conversion warmups occur before source-frame admission.
+
+**Next checkpoint:** record actual camera timing with consent and verify guided
+progression, stop/retake/restart recovery, hand shortcuts, floating controls and
+evidence/replay. Synthetic success does not establish real capture acceptance.
+
+## Prior device and real-data evidence
 
 - **16:16 EDT:** user confirmed a live moving image in the official camera sample.
 - **17:30–17:31 EDT:** earlier tetrahedron fixture rendered; observed controller
@@ -172,9 +291,10 @@ a coordinate/validity fixture. Neither produces clinical findings.
 - **Real geometry:** the C# importer loaded the original public GVHMR output:
   242 frames, 10,475 vertices and 22 joints, in 291 ms on the Mac. This is importer
   timing on desktop, not first-frame Quest latency or visual correctness.
-- **Integrated app:** first integrated APK built. Intermediate build 2 was
-  intentionally cancelled as obsolete; the frozen final build/install/wearer
-  checks are pending at this checkpoint.
+- **PR #10 integration:** source `636746d` built as an 85,431,296-byte ARM64 APK,
+  installed and cold-launched at approximately 20:12 EDT. Logs showed no captured
+  C# exceptions and placement awaiting a tracked head. It predates this spatial
+  UI/recording fix and does not prove the new path.
 
 Still required: a fresh consented capture through actual service/GPU to saved
 Quest replay, body/skeleton/axis inspection, real ELK/RTK/foot methods, useful

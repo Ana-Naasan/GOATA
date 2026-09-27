@@ -8,5 +8,6 @@
     <Reference Include="Newtonsoft.Json"><HintPath>@(CachedNewtonsoft)</HintPath></Reference>
     <Compile Include="CaptureChecks.cs" />
     <Compile Include="../Assets/Physio/Capture/CaptureBundle.cs" />
+    <Compile Include="../Assets/Physio/Capture/CaptureReadbacks.cs" />
   </ItemGroup>
 </Project>

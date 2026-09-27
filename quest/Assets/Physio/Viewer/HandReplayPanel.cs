@@ -7,6 +7,9 @@ namespace Physio.Viewer
 {
     public sealed class HandReplayPanel : MonoBehaviour
     {
+        [SerializeField] private Transform? timelineRoot;
+        [SerializeField] private Transform? head;
+
         [Header("Controls")]
         [SerializeField] private Button? playPauseButton;
         [SerializeField] private Button? reverseButton;
@@ -77,6 +80,17 @@ namespace Physio.Viewer
             if (controlsButton != null) controlsButton.onClick.AddListener(ToggleControls);
             if (seekSlider != null) seekSlider.onValueChanged.AddListener(HandleSeekChanged);
             SetControlsExpanded(false);
+        }
+
+        public void ShowTimeline(bool visible)
+        {
+            if (timelineRoot == null) return;
+            if (visible && !timelineRoot.gameObject.activeSelf && head != null)
+            {
+                var yaw = Quaternion.Euler(0, head.eulerAngles.y, 0);
+                timelineRoot.SetPositionAndRotation(head.position + yaw * new Vector3(.15f, -.42f, 1.05f), yaw);
+            }
+            timelineRoot.gameObject.SetActive(visible);
         }
 
         public void ConfigureTimeline(float startTime, float endTime)
