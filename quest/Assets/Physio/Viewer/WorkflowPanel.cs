@@ -112,9 +112,11 @@ namespace Physio.Viewer
             endpoint = PlayerPrefs.GetString("physio.processing.url", "");
             if (!string.IsNullOrEmpty(endpoint))
             { try { ProcessingClient.ValidateEndpoint(new Uri(endpoint)); } catch (Exception) { endpoint = ""; PlayerPrefs.DeleteKey("physio.processing.url"); } }
+            var provisioned = LoadConnection();
             try { Show(Screen.Patients); }
             catch (Exception)
-            { heading.text = "Patient history unavailable"; body.text = "Local records could not be read. Existing files are retained."; status.text = "Check local storage and retry."; SetAction(primary, "Retry local history", () => Show(Screen.Patients)); }
+            { heading.text = "Patient history unavailable"; body.text = "Local records could not be read. Existing files are retained."; status.text = "Check local storage and retry."; SetAction(primary, "Retry local history", () => Show(Screen.Patients)); return; }
+            if (provisioned) CheckConnection();
         }
 
         private void Update()
@@ -225,7 +227,9 @@ namespace Physio.Viewer
             body.text = "";
             SetBodyHeight(next == Screen.Review ? 56 : next == Screen.Finding || next == Screen.Feature ? 300 :
                 next == Screen.CaptureSetup ? 240 : 96);
-            status.text = error; error = "";
+            status.text = error.Length == 0 && (next == Screen.Patients || next == Screen.History || next == Screen.CaptureSetup)
+                ? connectionStatus : error;
+            error = "";
             context.text = patient == null ? "LOCAL PATIENTS · QUEST 3" : patient.DisplayName +
                 (session == null ? " · Patient history" : $"\n{ReviewEvidence.TestName(session.TestType)} · {session.CreatedAt.ToLocalTime():MMM d, HH:mm}");
             back.gameObject.SetActive(next != Screen.Patients);
@@ -380,7 +384,7 @@ namespace Physio.Viewer
             var patientId = patient.Id; var sessionId = session.Id; var retry = forceNewVersion || session.Status == "failed";
             try
             {
-                using var client = new ProcessingClient(store, new Uri(endpoint), token);
+                using var client = new ProcessingClient(store, new Uri(endpoint), token, leafSha256: leafSha256);
                 var loaded = await Task.Run(() => client.ProcessAsync(patientId, sessionId, update => updates.Enqueue(update), processingCancellation.Token, reprocess: retry));
                 if (this == null) return;
                 session = store.Session(patientId, sessionId);
@@ -566,11 +570,7 @@ namespace Physio.Viewer
             var items = new List<(string, Action)>();
             if (returnScreen == Screen.Processing || returnScreen == Screen.CaptureSummary || returnScreen == Screen.Patients)
             {
-                body.text = $"Service: {(string.IsNullOrEmpty(endpoint) ? "Not connected" : endpoint)}\n" +
-                    $"Access: {(string.IsNullOrEmpty(token) ? "Token needed" : "Token ready for this session")}";
-                items.Add(("Service address", () => Keyboard("https://your-service", false, value =>
-                { var uri = new Uri(value.Trim()); ProcessingClient.ValidateEndpoint(uri); endpoint = uri.AbsoluteUri.TrimEnd('/'); PlayerPrefs.SetString("physio.processing.url", endpoint); PlayerPrefs.Save(); Show(Screen.Options); })));
-                items.Add(("Access token", () => Keyboard("Service access token", true, value => { token = value.Trim(); Show(Screen.Options); })));
+                AddConnectionOptions(items);
             }
             else if (returnScreen == Screen.Review || returnScreen == Screen.Finding || returnScreen == Screen.Microscope)
             {
@@ -682,6 +682,6 @@ namespace Physio.Viewer
         }
         private static string SafeError(Exception exception) => exception is ArgumentException || exception is InvalidDataException
             ? exception.Message : "The operation failed. The saved recording is retained; try again or check the service.";
-        private void OnDestroy() { processingCancellation?.Cancel(); frameCompletion?.TrySetCanceled(); evidence?.Stop(); token = ""; }
+        private void OnDestroy() { connectionCancellation?.Cancel(); processingCancellation?.Cancel(); frameCompletion?.TrySetCanceled(); evidence?.Stop(); token = leafSha256 = ""; }
     }
 }

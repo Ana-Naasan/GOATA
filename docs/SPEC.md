@@ -216,6 +216,14 @@ Use application-private Quest storage for local sessions and a configured privat
 
 Remote compute must have explicit access/cost authorization. The repository request does not authorize paid jobs or participant upload. Verify how Quest reaches the service over the actual network. Use TLS for remote access and a deployment token entered/configured at runtime; never compile a secret into the app or put it in Git. Do not expose an unauthenticated public GPU endpoint.
 
+The private deployment may provision a one-use `processing-connection.json`
+containing the HTTPS origin, token and optional SHA-256 TLS leaf fingerprint.
+The client deletes the file after reading, retains credentials only for the app
+session and checks authentication without uploading media or blocking local
+capture. A full app restart requires reprovisioning. Explicit leaf pinning
+preserves hostname/validity checks; normal HTTPS trust applies without a pin.
+The current laptop-assisted route uses wireless ADB reverse and an SSH tunnel.
+
 ## 7. Models, analysis and evidence
 
 ### 7.1 Body/motion reconstruction

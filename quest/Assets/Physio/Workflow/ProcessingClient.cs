@@ -28,13 +28,13 @@ namespace Physio.Workflow
         private readonly HttpClient http;
         private readonly string token;
         private int active;
-        public ProcessingClient(LocalPatientStore store, Uri endpoint, string bearerToken, bool allowLoopbackHttp = false)
-            : this(store, endpoint, bearerToken, new HttpClientHandler { AllowAutoRedirect = false }, allowLoopbackHttp) { }
+        public ProcessingClient(LocalPatientStore store, Uri endpoint, string bearerToken, bool allowLoopbackHttp = false, string leafSha256 = "")
+            : this(store, endpoint, bearerToken, ProcessingConnection.CreateHandler(leafSha256), allowLoopbackHttp) { }
         // Injectable HTTP transport permits deterministic upload/poll/restart checks without a live service.
         public ProcessingClient(LocalPatientStore store, Uri endpoint, string bearerToken, HttpMessageHandler transport, bool allowLoopbackHttp = false)
         {
             ValidateEndpoint(endpoint, allowLoopbackHttp);
-            Require(!string.IsNullOrWhiteSpace(bearerToken) && bearerToken.Length <= 4096 && !bearerToken.Any(char.IsControl), "Enter a valid deployment token.");
+            ProcessingConnection.ValidateToken(bearerToken);
             this.store = store; token = bearerToken;
             http = new HttpClient(transport) { BaseAddress = new Uri(endpoint.AbsoluteUri.TrimEnd('/') + "/"), Timeout = Timeout.InfiniteTimeSpan };
         }
@@ -45,6 +45,18 @@ namespace Physio.Workflow
             var loopback = endpoint.IsLoopback && (endpoint.Host == "localhost" || IPAddress.TryParse(endpoint.Host.Trim('[', ']'), out var address) && IPAddress.IsLoopback(address));
             Require(endpoint.Scheme == "https" || allowLoopbackHttp && endpoint.Scheme == "http" && loopback, "Use HTTPS. HTTP is allowed only for explicitly enabled local development.");
             Require(endpoint.AbsolutePath == "/", "Server URL must identify the service origin, without an API path.");
+        }
+        public async Task CheckConnectionAsync(CancellationToken cancellation = default)
+        {
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+            deadline.CancelAfter(TimeSpan.FromSeconds(12));
+            // An authenticated lookup of a new random identity has no media or processing side effects.
+            using var response = await Send(() => Request(HttpMethod.Get, "v1/jobs/" + Guid.NewGuid()), deadline.Token, 10);
+            var value = WorkflowJson.Read(await ReadBounded(response.Content, 16384, deadline.Token));
+            WorkflowJson.Fields(value, "error request_id"); WorkflowJson.Id(value["request_id"]);
+            WorkflowValidation.Error((JObject)value["error"]!);
+            Require(response.StatusCode == HttpStatusCode.NotFound && (string?)value["error"]!["code"] == "NOT_FOUND",
+                "Service connection or authorization check failed. Verify the service address and access token.");
         }
         public async Task<CachedResult> ProcessAsync(Guid patientId, Guid sessionId, Action<ProcessingUpdate>? progress = null,
             CancellationToken cancellation = default, bool reprocess = false)

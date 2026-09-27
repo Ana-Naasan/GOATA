@@ -124,9 +124,9 @@ public static class FixtureBuild
     {
         PlayerSettings.companyName = "HTH";
         PlayerSettings.productName = "Physio Replay";
-        PlayerSettings.bundleVersion = "0.3.0";
+        PlayerSettings.bundleVersion = "0.3.1";
         PlayerSettings.SetApplicationIdentifier(UnityEditor.Build.NamedBuildTarget.Android, "com.hth.physio.fixture");
-        PlayerSettings.Android.bundleVersionCode = 7;
+        PlayerSettings.Android.bundleVersionCode = 8;
         PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel32;
         PlayerSettings.Android.targetSdkVersion = AndroidSdkVersions.AndroidApiLevel34;
         PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;

@@ -1,7 +1,9 @@
 # Codex session handoff
 
-**Last updated:** September 27, 2026. The UI redesign **0.3.0 / Android code 7**
-is built, installed wirelessly and cold-launched on Quest 3. Source is on
+**Last updated:** September 27, 2026. The UI redesign with restored automatic
+connection setup **0.3.1 / Android code 8** is built, installed wirelessly and
+launched on Quest 3. The headset authenticated against the existing private
+processing service; all **305** saved app files survived unchanged. Source is on
 `codex/hci-quest-ui` in `/Users/baderasadi/.codex/worktrees/hci-quest-ui/HTH`, based
 on `main` at `1a9f9e3`. M1 and clinical evaluation remain incomplete: no new
 participant capture → GPU → loaded saved review was verified during this UI work.
@@ -51,9 +53,67 @@ panel bounds and environment/play interaction components.
 
 Next: wear the headset and accept panel size/reach, camera framing, saved replay
 timeline, grounded scaling, Moon/passthrough transition and Play controls. New
-captures require the separately configured authenticated processing service;
-this deployment updated the Quest client only. Historical milestones below are
+captures require the authenticated processing service; the 0.3.1 restoration
+below reconnects the already-running private service. This deployment updated
+the Quest client only. Historical milestones below are
 retained as evidence, not new verification of this release.
+
+## Automatic connection restoration (0.3.1)
+
+The 0.3.0 UI build omitted connection integration present in the earlier local
+`ml-optimization-review` checkout. The existing private GPU service and Mac SSH
+tunnel were already available. This fix ports only that connection integration;
+it preserves the redesigned interface and the earlier checkout's unrelated work.
+
+- Consume and delete bounded runtime connection configuration on startup. Keep
+  the token and optional TLS leaf fingerprint in memory for the app session.
+- Check authentication in the background through a random nonexistent-job GET.
+  Local patient/capture actions remain usable; no recording is uploaded and no
+  inference job is created by this check.
+- Use the same verified TLS handler for processing. Explicit pinning retains
+  hostname and certificate date checks; ordinary CA validation remains the
+  default. Redirects are disabled. Options displays connection status and the
+  configured endpoint without exposing credentials.
+- Restore the existing private route: Quest loopback 8443 → wireless ADB reverse
+  → Mac loopback 8443 → existing SSH tunnel → GPU service. This is session
+  provisioning: after a full app restart the private launcher must supply the
+  configuration again. Keep the laptop and its connections available.
+
+The new `quest/Checks/ConnectionChecks.csproj` failed before implementation and
+then passed **49 checks**, including real TLS handshakes, malformed/oversized
+configuration, one-use deletion, authentication rejection and a read-only probe.
+The existing workflow suite passed **673 checks**. General/C# review resolved
+startup error masking, stale connection status and blocked local navigation;
+scoped security review found no blocker. `pip-audit` reported no known
+vulnerabilities. No dependency or backend model changes were made.
+
+Unity **6000.0.66f2** built 0.3.1 successfully with `FixtureBuild.Build` (Android
+API 34/ARM64). APK: **86,305,706 bytes**, SHA-256
+`40840557c84e202ae75377bacbcc1197673e69b97541c5580de9d17ab530dce3`.
+APK signing verification passed. Wireless `adb install -r` succeeded, installed
+version **0.3.1 / code 8** and APK hash were verified, and all **305** app file
+hashes matched before relaunch. No app data was cleared.
+
+The existing private launcher restored `tcp:8443` reverse forwarding and
+provisioned the connection without printing credentials. Startup PID **30063**
+logged `PHYSIO_VIEWER_READY` and `PHYSIO_CONNECTION_READY` at **07:07:45 EDT**.
+The one-use configuration file was confirmed absent afterward. This verifies
+Quest TLS/authentication and startup, not inference or a new capture-to-review
+run; no participant recording was submitted during verification.
+
+Commands used: `dotnet run --project quest/Checks/ConnectionChecks.csproj
+--no-restore`, the corresponding `WorkflowChecks.csproj` command, Unity's batch
+build, APK signature/version checks, wireless `adb install -r`, before/after
+device SHA-256 comparisons, the existing private provisioning launcher and
+process-specific `adb logcat`. The .NET runtime is the existing cached runtime;
+no installation was needed. Build logs, startup logs and file-hash evidence are
+outside Git at `/Users/baderasadi/Library/Caches/HTH/hci-ui-deploy-031/`.
+Unrelated generated scene-ID churn and TMP serialization were restored; only
+the intended application version changes remain in project settings.
+
+Next: reopen the saved patient/test and choose **Process / retry**. Keep the
+laptop, wireless ADB and SSH tunnel available. A full app restart needs the
+private provisioning launcher again; credentials are not stored permanently.
 
 ## Mohammad's persistent inference experiment review
 

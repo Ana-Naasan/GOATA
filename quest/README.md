@@ -1,6 +1,7 @@
 # Quest app
 
-**Last updated:** September 27, 2026. The UI redesign is version **0.3.0 / code 7**
+**Last updated:** September 27, 2026. The UI redesign with restored automatic
+connection setup is version **0.3.1 / code 8**
 on `codex/hci-quest-ui`, based on `main` at `1a9f9e3`. It uses one main workspace,
 a compact replay HUD, bounded movable panels, explicit camera framing/countdown,
 visual movement examples, grounded replay, anatomical evidence highlights and an
@@ -78,9 +79,13 @@ focus and valid tracked position/orientation instead of using an untracked pose.
 - **Historical barefoot capture:** four standing close-ups around one selected foot, with
   anatomical side fixed after the first saved view. No body replay is produced.
   This collection sequence is not a clinically validated foot protocol.
-- **Processing:** enter the HTTPS service URL and token through Options/system
-  keyboard. The token stays in memory; enter it again after app restart. The URL
-  is saved. Processing reports actual stages, retry errors and unavailable methods.
+- **Processing:** the private deployment launcher supplies the service address,
+  token and optional TLS certificate fingerprint before launch. The app consumes
+  and deletes the setup file, then checks authentication in the background.
+  Credentials stay in memory for that app session; a full restart requires the
+  launcher to provision them again. Manual setup and a connection check remain
+  under Options. Only a manually entered URL is saved in preferences. Processing
+  reports actual stages, retry errors and unavailable methods.
 - **Review:** play/pause, full timeline, reverse, frame steps, restart and
   0.25×/0.5×/1×/1.5×/2× speed. Body and skeleton share one display transform;
   moving/resizing them never changes stored measurements.
@@ -109,6 +114,22 @@ Capture publication and cached results validate identities, sizes and hashes;
 accepted-upload retries retain the idempotency key. Original captures remain
 immutable. Heavy file, network, JSON and importer work runs outside Unity's
 main thread; scene changes and mesh binding run on the main thread.
+
+### Private processing connection
+
+Runtime provisioning uses `processing-connection.json` in the app's persistent
+data directory, with `endpoint`, `bearer_token` and optional `tls_leaf_sha256`.
+Keep this file and its real values outside Git. It is bounded to 16 KiB and
+deleted after a load attempt. The optional fingerprint pins a private server's
+leaf certificate; hostname and validity checks remain enforced. Without it,
+normal HTTPS certificate trust applies. Redirects are disabled.
+
+The current private route is Quest loopback port 8443 → wireless ADB reverse →
+Mac loopback port 8443 → the existing SSH tunnel → GPU service. Keep the laptop,
+wireless ADB connection and tunnel available. The startup check is an
+authenticated lookup of a random nonexistent job; it uploads no recording and
+starts no inference. It leaves local recording controls usable while offline.
+An authenticated connection does not establish GPU/model readiness.
 
 The first-display timing is recorded after an end-of-frame boundary, including
 loading/binding. Continuous sessions use a monotonic interval from the final
