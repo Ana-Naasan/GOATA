@@ -28,6 +28,11 @@ namespace Physio.Workflow
                 Choice(take["view"], "front", "left", "right", "rear", "medial", "other");
                 Choice(take["condition"], "standing", "seated", "exercise", "steady_hold");
                 Choice(take["side"], "left", "right", "bilateral", "not_applicable"); Require(Number(take["duration_s"]) > 0, "Capture duration must be positive.");
+                if (session.TestType == "walking")
+                {
+                    Require(kind == "full_body" || kind == "microscope", "Walking requires full-body evidence.");
+                    Require(String(take["side"]) == "not_applicable" && String(take["condition"]) == (kind == "microscope" ? "steady_hold" : "exercise"), "Invalid walking capture context.");
+                }
                 if (kind == "foot_closeup") { Choice(take["side"], "left", "right"); Choice(take["condition"], "standing", "seated"); }
                 foreach (var field in new[] { "video", "frame_metadata" })
                 {
@@ -99,9 +104,10 @@ namespace Physio.Workflow
         }
         internal static void Result(JObject value, SessionRecord session, JObject capture, LocalPatientStore store, Guid? expectedResult)
         {
-            Fields(value, "schema_version result_id job_id session_id patient_id test_type created_at pipeline_version protocol_id protocol_version input_digest validation_status methods features findings microscopes artifacts", "replay");
+            var version = Choice(value["schema_version"], "1.0", "1.1");
+            Fields(value, "schema_version result_id job_id session_id patient_id test_type created_at pipeline_version protocol_id protocol_version input_digest validation_status methods features findings microscopes artifacts" + (version == "1.1" ? " observations" : ""), "replay");
             Identity(value, session); var id = Id(value["result_id"]); if (expectedResult.HasValue) Require(id == expectedResult.Value && Id(value["job_id"]) == session.JobId, "Result differs from completed job."); else Id(value["job_id"]);
-            Require(String(value["schema_version"]) == "1.0" && String(value["validation_status"]) == "research_demo_unvalidated", "Unsupported result schema or validation status.");
+            Require(String(value["validation_status"]) == "research_demo_unvalidated", "Unsupported result schema or validation status.");
             Require(JToken.DeepEquals(value["protocol_id"], capture["protocol_id"]) && JToken.DeepEquals(value["protocol_version"], capture["protocol_version"]), "Result protocol mismatch.");
             Date(value["created_at"]); String(value["pipeline_version"], 100); Hash(value["input_digest"]);
             var artifacts = new Dictionary<Guid, JObject>(); long total = 0;
@@ -126,7 +132,7 @@ namespace Physio.Workflow
             var features = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var token in Array(value["features"]))
             {
-                var feature = Fields(token, "name status detail"); var name = Choice(feature["name"], "replay", "movement", "foot", "microscope");
+                var feature = Fields(token, "name status detail"); var name = Choice(feature["name"], version == "1.1" ? new[] { "replay", "movement", "foot", "microscope", "observations" } : new[] { "replay", "movement", "foot", "microscope" });
                 Require(!features.ContainsKey(name), "Duplicate feature."); features.Add(name, Choice(feature["status"], "available", "unavailable")); String(feature["detail"], 500);
             }
             Require(features.ContainsKey("microscope") && (session.TestType == "barefoot" ? features.ContainsKey("foot") : features.ContainsKey("movement") && features.ContainsKey("replay")), "Missing feature availability.");
@@ -137,6 +143,7 @@ namespace Physio.Workflow
                 Reference(replay["manifest_artifact_id"], artifacts, "replay_manifest");
             }
             else Require(!features.TryGetValue("replay", out var state) || state == "unavailable", "Replay marked available without artifacts.");
+            if (version == "1.1") Observations(value, methods, features, capture, session, store);
             var microscopes = new Dictionary<Guid, JObject>();
             foreach (var token in Array(value["microscopes"]))
             {
@@ -169,6 +176,57 @@ namespace Physio.Workflow
                     Require(JToken.DeepEquals(finding["evidence"], microscope!["evidence"]), "Microscope evidence differs from finding.");
                 }
             }
+        }
+        private static void Observations(JObject value, HashSet<string> methods, Dictionary<string, string> features, JObject capture, SessionRecord session, LocalPatientStore store)
+        {
+            var observations = Array(value["observations"]); Require(observations.Count <= 16, "Too many movement observations.");
+            Require(features.TryGetValue("observations", out var state) && state == (observations.Count > 0 ? "available" : "unavailable"), "Observation availability differs from results.");
+            var ids = new HashSet<Guid>();
+            foreach (var token in observations)
+            {
+                var item = Fields(token, "observation_id method_id quantity_code label explanation region side evidence limitations metrics", "highlight_joint_names");
+                Require(ids.Add(Id(item["observation_id"])), "Duplicate observation ID.");
+                var quantity = Choice(item["quantity_code"], "elk.lateral_torso_lean", "rtk.shoulder_pelvis_rotation", "walking.knee_flexion", "walking.trunk_lean");
+                Require(quantity.StartsWith(session.TestType + ".", StringComparison.Ordinal), "Observation quantity differs from test.");
+                Choice(item["side"], quantity == "walking.knee_flexion" ? new[] { "left", "right" } : new[] { "not_applicable" });
+                MethodAndEvidence(item, methods, capture, session, store);
+                String(item["label"], 160); String(item["explanation"], 1000);
+                var evidence = (JObject)item["evidence"]!;
+                Require(value["replay"] != null && JToken.DeepEquals(evidence["take_id"], value["replay"]!["source_take_id"]), "Observation must use the selected replay take.");
+                Require(String(evidence["quality"]) == "limited", "Movement observations are unvalidated model estimates.");
+                var limitations = Array(item["limitations"]); Require(limitations.Count >= 1 && limitations.Count <= 8, "Observation requires bounded limitations.");
+                foreach (var limitation in limitations) String(limitation, 500);
+                var metrics = Array(item["metrics"]); Require(metrics.Count >= 1 && metrics.Count <= 4, "Observation requires bounded metrics.");
+                var metricNames = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var tokenMetric in metrics)
+                {
+                    var metric = Fields(tokenMetric, "name value unit basis scale_status", "scale_provenance");
+                    Require(metricNames.Add(String(metric["name"], 100)), "Duplicate observation metric name."); var number = Number(metric["value"]); Require(number >= -180 && number <= 180, "Observation angle exceeds supported bounds.");
+                    Require(String(metric["unit"]) == "deg" && String(metric["basis"]) == "pose_estimate" && String(metric["scale_status"]) == "not_required", "Observation must be a scale-independent model angle.");
+                    if (metric["scale_provenance"] != null) String(metric["scale_provenance"], 500);
+                }
+                if (item["highlight_joint_names"] != null)
+                {
+                    var names = Array(item["highlight_joint_names"]).Select(n => String(n, 80)).ToArray();
+                    Require(names.Length <= 22 && names.Distinct(StringComparer.Ordinal).Count() == names.Length, "Invalid observation highlights.");
+                }
+                ObservationSource(evidence, capture, session, store);
+            }
+        }
+        private static void ObservationSource(JObject evidence, JObject capture, SessionRecord session, LocalPatientStore store)
+        {
+            var take = ((JArray)capture["takes"]!).OfType<JObject>().Single(t => JToken.DeepEquals(t["take_id"], evidence["take_id"]));
+            Require((string?)take["kind"] == "full_body", "Observation requires a full-body take.");
+            Choice(take["condition"], session.TestType == "walking" ? new[] { "exercise" } : new[] { "seated", "exercise" });
+            var sidecar = store.Sidecar(session, take); var origin = Timestamp(sidecar["clock"]!["origin_pts_ns"]);
+            var first = Integer(evidence["first_frame_id"]); var last = Integer(evidence["last_frame_id"]);
+            var frames = Array(sidecar["frames"]).Where(f => Integer(f["frame_id"]) >= first && Integer(f["frame_id"]) <= last).ToArray();
+            var start = Number(evidence["start_s"]); var end = Number(evidence["end_s"]);
+            Require(Math.Abs((double)(Timestamp(frames.First()["pts_ns"]) - origin) / 1e9 - start) <= 1e-9 && Math.Abs((double)(Timestamp(frames.Last()["pts_ns"]) - origin) / 1e9 - end) <= 1e-9, "Observation times must match exact source frames.");
+            Require(!Boolean(sidecar["capture"]!["interrupted"]) && frames.All(f => Boolean(f["image_valid"])), "Observation includes unobserved source images.");
+            for (var i = 1; i < frames.Length; i++) Require(Timestamp(frames[i]["pts_ns"]) - Timestamp(frames[i - 1]["pts_ns"]) <= 100000000, "Observation crosses an undeclared source gap.");
+            foreach (var gap in Array(sidecar["capture"]!["gaps"]))
+                Require((double)(Timestamp(gap["end_pts_ns"]) - origin) / 1e9 < start || (double)(Timestamp(gap["start_pts_ns"]) - origin) / 1e9 > end, "Observation crosses a source gap.");
         }
         private static void MethodAndEvidence(JObject item, HashSet<string> methods, JObject capture, SessionRecord session, LocalPatientStore store)
         {
@@ -221,6 +279,26 @@ namespace Physio.Workflow
             foreach (var finding in (JArray)result["findings"]!)
                 if (finding["highlight_joint_names"] is JArray highlights)
                     foreach (var name in highlights) Require(names.Contains(String(name, 80)), "Finding highlights an unknown replay joint.");
+            foreach (var observation in result["observations"] as JArray ?? new JArray())
+            {
+                var evidence = observation["evidence"]!;
+                var first = Integer(evidence["first_frame_id"]); var last = Integer(evidence["last_frame_id"]);
+                var selected = Enumerable.Range(0, ids.Count).Where(i => Integer(ids[i]) >= first && Integer(ids[i]) <= last).ToArray();
+                Require(selected.Length > 0 && Integer(ids[selected.First()]) == first && Integer(ids[selected.Last()]) == last, "Observation source frames are absent from replay.");
+                Require(selected.All(i => Boolean(metadata["frame_valid"]![i])), "Observation includes an invalid replay frame.");
+                foreach (var gap in Array(metadata["gaps"]))
+                    Require(Number(gap["end_s"]) < Number(evidence["start_s"]) || Number(gap["start_s"]) > Number(evidence["end_s"]), "Observation crosses a replay gap.");
+                var quantity = String(observation["quantity_code"]); var side = String(observation["side"]);
+                var required = quantity == "walking.knee_flexion" ? new[] { side + "_hip", side + "_knee", side + "_ankle" }
+                    : new[] { "left_hip", "right_hip", "left_shoulder", "right_shoulder" };
+                var highlights = (observation["highlight_joint_names"] as JArray ?? new JArray()).Select(n => String(n, 80));
+                foreach (var joint in required.Concat(highlights).Distinct(StringComparer.Ordinal))
+                {
+                    Require(names.Contains(joint), "Observation requires an unknown replay joint.");
+                    var jointIndex = Enumerable.Range(0, data.JointCount).Single(i => data.JointNameAt(i) == joint);
+                    Require(selected.All(i => Boolean(metadata["joint_valid"]![i]![jointIndex])), "Observation highlights an invalid fitted joint.");
+                }
+            }
         }
     }
 }

@@ -35,14 +35,18 @@ namespace Physio.Viewer
             Show(Screen.Review);
         }
 
+        public void OpenInsightsShortcut()
+        {
+            if (!CanOpenReplay || !viewer.HasInputFocus) return;
+            showObservations = true; Show(Screen.Review);
+        }
+
         private void RenderCaptureSetup()
         {
             if (patient == null || session == null) { Show(Screen.Tests); return; }
             heading.text = "Prepare your capture";
             var hasSavedTake = guidedCapture?.Views.Any(view => view.TakeIds.Count > 0) == true;
-            body.text = session.TestType == "barefoot"
-                ? "Four viewpoints of the selected bare foot while standing. Keep that foot visible and steady. This is a research capture sequence; automated foot assessment is unvalidated."
-                : "Repeat the seated movement from the patient's right, front, back and left. Move between takes, then hold steady. Keep the participant and chair centered: the camera records less than your passthrough view.";
+            body.text = SpatialCapturePresentation.SetupInstruction(session.TestType);
             SetRow(0, consentConfirmed ? "Participant consent confirmed" : "Confirm participant consent", () => { consentConfirmed = !consentConfirmed; RenderCaptureSetup(); });
             if (!hasSavedTake)
                 SetRow(1, $"Each recording: {targetDurationSeconds:0} seconds · change", () => { targetDurationSeconds = targetDurationSeconds == 5 ? 10 : targetDurationSeconds == 10 ? 15 : 5; RenderCaptureSetup(); });
@@ -86,8 +90,7 @@ namespace Physio.Viewer
             var title = microscopeHold ? "Steady hold for motion microscope" : $"{SpatialCapturePresentation.Step(captureView)} OF 4 · PATIENT'S {view.ToUpperInvariant()}";
             var instruction = microscopeHold
                 ? "Frame the chosen region. Keep the participant and camera steady."
-                : session.TestType == "barefoot" ? $"{captureSide.ToUpperInvariant()} FOOT · Standing close-up · {targetDurationSeconds:0} seconds"
-                : $"{ReviewEvidence.TestName(session.TestType)} · Seated · {targetDurationSeconds:0} seconds\nKeep the participant and chair in view.";
+                : SpatialCapturePresentation.ViewInstruction(session.TestType, captureSide, targetDurationSeconds);
             var steps = microscopeHold ? "Separate evidence recording" : string.Join("    ", new[] { "right", "front", "rear", "left" }.Select(v =>
                 (guidedCapture?.Views.FirstOrDefault(item => item.View == v)?.SelectedTakeId != null ? "✓ " : v == captureView ? "● " : "○ ") + SpatialCapturePresentation.ViewName(v)));
             var message = !string.IsNullOrEmpty(captureSaveError) ? captureSaveError : !string.IsNullOrEmpty(recorder.Error) ? recorder.Error :

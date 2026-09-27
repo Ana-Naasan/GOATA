@@ -40,7 +40,7 @@ static class WorkflowChecks
             Reject(() => store.OpenResult(first.Id, session.Id), "No result before processing.");
             Check(store.SavedResults(first.Id, session.Id).Count == 0, "No versions before processing.");
             Check(session.Stage == "" && session.Error == "" && !session.ResultId.HasValue, "New session empty state.");
-            Reject(() => store.CreateSession(first.Id, "gait"), "Only three tests.");
+            Reject(() => store.CreateSession(first.Id, "gait"), "Unknown test identifier rejected.");
             var reopened = new LocalPatientStore(root);
             Check(reopened.Patients().Count == 2 && reopened.Session(first.Id, session.Id).Id == session.Id, "Restart preserves IDs/history.");
             Reject(() => ProcessingClient.ValidateEndpoint(new Uri("http://192.168.1.2:8000"), false), "Remote HTTP rejected.");
@@ -110,10 +110,160 @@ static class WorkflowChecks
             await RetryAndPolling(root, store, first.Id);
             MicroscopeBundle(root, store, first.Id);
             GuidedCaptureBundle(root, store, first.Id, second.Id);
+            WalkingCaptureBundle(root, store, first.Id, second.Id);
+            await Observations(root, store, first.Id, second.Id);
             Check(!Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).Where(f => f.EndsWith(".json")).Any(f => File.ReadAllText(f).Contains("private-token")), "No auth token persisted.");
             Console.WriteLine($"Workflow checks: {checks} passed.");
         }
         finally { Directory.Delete(root, true); }
+    }
+    static void WalkingCaptureBundle(string root, LocalPatientStore store, Guid patient, Guid otherPatient)
+    {
+        var session = store.CreateSession(patient, "walking"); var state = store.BeginGuidedCapture(patient, session.Id);
+        Check(state.FootSide == "not_applicable" && state.TargetDurationSeconds == 10, "Walking has full-body defaults.");
+        foreach (var view in new[] { "right", "front", "rear", "left" })
+        {
+            var input = MakeGuidedCapture(root, session, view);
+            Check((string?)input.Manifest["takes"]![0]!["condition"] == "exercise", "Walking uses independent exercise passes.");
+            foreach (var change in new Action<JObject>[] {
+                m => m["takes"]![0]!["condition"] = "seated", m => m["takes"]![0]!["side"] = "left",
+                m => m["takes"]![0]!["kind"] = "foot_closeup", m => m.Remove("replay_take_id") })
+            {
+                var invalid = (JObject)input.Manifest.DeepClone(); change(invalid);
+                Reject(() => store.SaveGuidedTake(patient, session.Id, invalid.ToString(), input.Zip), "Invalid walking capture rejected.");
+            }
+            state = store.SaveGuidedTake(patient, session.Id, input.Manifest.ToString(), input.Zip);
+            store = new LocalPatientStore(root);
+            Check(store.GuidedCapture(patient, session.Id)!.Views.Single(v => v.View == view).SelectedTakeId.HasValue, "Walking survives restart.");
+        }
+        Reject(() => store.CompleteGuidedCapture(patient, session.Id, null), "Walking requires one chosen replay take.");
+        var complete = store.CompleteGuidedCapture(patient, session.Id, state.SuggestedReplayTakeId);
+        Check(complete.TestType == "walking" && complete.Status == "captured", "Walking bundle completes.");
+        Reject(() => store.Session(otherPatient, session.Id), "Walking stays patient isolated.");
+    }
+    static async Task Observations(string root, LocalPatientStore store, Guid patient, Guid otherPatient)
+    {
+        var session = store.CreateSession(patient, "elk"); var capture = MakeCapture(root, session, true);
+        store.SaveCapture(patient, session.Id, capture.Manifest.ToString(), capture.Zip);
+        var scenario = new Scenario(session); scenario.AddObservations();
+        using (var client = Client(store, scenario))
+        {
+            var cached = await client.ProcessAsync(patient, session.Id);
+            Check((string?)cached.Manifest["schema_version"] == "1.1" && ((JArray)cached.Manifest["observations"]!).Count == 1, "Result 1.1 retains observations.");
+            Check(((JArray)cached.Manifest["findings"]!).Count == 0, "Estimates remain separate from clinical findings.");
+        }
+        var reopened = new LocalPatientStore(root).OpenResult(patient, session.Id);
+        Check((string?)reopened.Manifest["observations"]![0]!["quantity_code"] == "elk.lateral_torso_lean", "Saved observation survives restart.");
+        Reject(() => store.OpenResult(otherPatient, session.Id), "Observation result stays patient isolated.");
+        var changes = new Action<JObject>[] {
+            r => r["schema_version"] = "1.0", r => r["schema_version"] = "1.2", r => r.Remove("observations"),
+            r => r["observations"] = JValue.CreateNull(), r => r["observations"] = new JArray(),
+            r => ((JArray)r["features"]!).Last!.Remove(), r => r["features"]!.Last!["status"] = "unavailable",
+            r => r.Remove("replay"), r => r["observations"]![0]!["quantity_code"] = "walking.knee_flexion",
+            r => r["observations"]![0]!["observation_id"] = Guid.Empty.ToString(),
+            r => r["observations"]![0]!["method_id"] = "unknown",
+            r => r["observations"]![0]!["evidence"]!["take_id"] = Guid.NewGuid().ToString(),
+            r => r["observations"]![0]!["evidence"]!["quality"] = "usable",
+            r => ((JObject)r["observations"]![0]!["evidence"]!).Remove("quality_reason"),
+            r => r["observations"]![0]!["evidence"]!["first_frame_id"] = 999,
+            r => r["observations"]![0]!["evidence"]!["start_s"] = 0.01,
+            r => r["observations"]![0]!["evidence"]!["condition"] = "standing",
+            r => { r["observations"]![0]!["evidence"]!["end_s"] = 0.2; r["observations"]![0]!["evidence"]!["last_frame_id"] = 107; },
+            r => r["observations"]![0]!["highlight_joint_names"] = new JArray("unknown_joint"),
+            r => r["observations"]![0]!["highlight_joint_names"] = new JArray("high_tip", "high_tip"),
+            r => r["observations"]![0]!["highlight_joint_names"] = new JArray("right_tip"),
+            r => r["observations"]![0]!["metrics"] = new JArray(),
+            r => r["observations"]![0]!["metrics"]![0]!["basis"] = "model_score",
+            r => r["observations"]![0]!["metrics"]![0]!["value"] = "NaN",
+            r => r["observations"]![0]!["metrics"]![0]!["value"] = 181,
+            r => r["observations"]![0]!["metrics"]![0]!["unit"] = "m",
+            r => ((JArray)r["observations"]![0]!["metrics"]!).Add(r["observations"]![0]!["metrics"]![0]!.DeepClone()),
+            r => r["observations"]![0]!["metrics"] = new JArray(Enumerable.Range(0, 5).Select(i => new JObject { ["name"] = "angle" + i, ["value"] = 10, ["unit"] = "deg", ["basis"] = "pose_estimate", ["scale_status"] = "not_required" })),
+            r => r["observations"]![0]!["side"] = "bilateral",
+            r => r["observations"]![0]!["quantity_code"] = "diagnosis.limp",
+            r => r["observations"]![0]!["label"] = new string('a', 161),
+            r => r["observations"]![0]!["explanation"] = new string('a', 1001),
+            r => r["observations"]![0]!["limitations"] = new JArray(Enumerable.Repeat("limit", 9)),
+            r => r["observations"]![0]!["highlight_joint_names"] = new JArray(Enumerable.Range(0, 23).Select(i => "joint" + i)),
+            r => r["observations"]![0]!["metrics"]![0]!["scale_status"] = "calibrated",
+            r => r["observations"]![0]!["limitations"] = new JArray(),
+            r => r["observations"]![0]!["confidence"] = 0.99,
+            r => ((JArray)r["observations"]!).Add(r["observations"]![0]!.DeepClone()),
+            r => { var original = r["observations"]![0]!; r["observations"] = new JArray(Enumerable.Range(0, 17).Select(_ => { var o = (JObject)original.DeepClone(); o["observation_id"] = Guid.NewGuid().ToString(); return o; })); }
+        };
+        foreach (var change in changes)
+        {
+            var invalidSession = store.CreateSession(patient, "elk"); var input = MakeCapture(root, invalidSession, true);
+            store.SaveCapture(patient, invalidSession.Id, input.Manifest.ToString(), input.Zip);
+            var invalid = new Scenario(invalidSession); invalid.AddObservations(); change(invalid.Result);
+            using var client = Client(store, invalid);
+            await RejectAsync(() => client.ProcessAsync(patient, invalidSession.Id), "Untrusted observation rejected.");
+            Check(store.SavedResults(patient, invalidSession.Id).Count == 0, "Rejected observation is never published.");
+        }
+        foreach (var failure in new[] { "replay_gap", "replay_frame", "endpoint_time", "required_joint", "missing_joint" })
+        {
+            var current = store.CreateSession(patient, "elk"); var input = MakeCapture(root, current, true);
+            store.SaveCapture(patient, current.Id, input.Manifest.ToString(), input.Zip);
+            var invalid = new Scenario(current); invalid.AddObservations();
+            if (failure == "endpoint_time") invalid.Result["observations"]![0]!["evidence"]!["end_s"] = .05;
+            else
+            {
+                var descriptor = ((JArray)invalid.Result["artifacts"]!).Single(a => (string?)a["role"] == "replay_manifest");
+                var id = Guid.Parse((string)descriptor["artifact_id"]!); var replay = JObject.Parse(Encoding.UTF8.GetString(invalid.Files[id]));
+                if (failure == "replay_frame") replay["frame_valid"]![1] = false;
+                else if (failure == "required_joint") { replay["joint_valid"]![1]![3] = false; ((JObject)invalid.Result["observations"]![0]!).Remove("highlight_joint_names"); }
+                else if (failure == "missing_joint") { replay["joint_names"]![3] = "not_a_hip"; ((JObject)invalid.Result["observations"]![0]!).Remove("highlight_joint_names"); }
+                else ((JArray)replay["gaps"]!).Insert(0, new JObject { ["start_s"] = .01, ["end_s"] = .02, ["reason"] = "Unusable interval" });
+                var bytes = Encoding.UTF8.GetBytes(replay.ToString()); invalid.Files[id] = bytes;
+                descriptor["byte_size"] = bytes.Length; descriptor["sha256"] = Hash(bytes);
+            }
+            using var client = Client(store, invalid);
+            await RejectAsync(() => client.ProcessAsync(patient, current.Id), "Observation cannot cross unusable replay or expand measured interval.");
+            Check(store.SavedResults(patient, current.Id).Count == 0, "Rejected replay observations remain unpublished.");
+        }
+        foreach (var test in new[] { "elk", "rtk", "walking" })
+        {
+            var current = store.CreateSession(patient, test); var input = MakeCapture(root, current, true);
+            store.SaveCapture(patient, current.Id, input.Manifest.ToString(), input.Zip);
+            var valid = new Scenario(current); valid.AddObservations();
+            var observation = valid.Result["observations"]![0]!;
+            observation["highlight_joint_names"] = new JArray();
+            if (test == "walking")
+            {
+                var angle = (JObject)observation.DeepClone(); angle["observation_id"] = Guid.NewGuid().ToString();
+                angle["quantity_code"] = "walking.knee_flexion"; angle["side"] = "left"; angle.Remove("highlight_joint_names");
+                ((JArray)valid.Result["observations"]!).Add(angle);
+            }
+            using var client = Client(store, valid);
+            Check(((JArray)(await client.ProcessAsync(patient, current.Id)).Manifest["observations"]!).Count == (test == "walking" ? 2 : 1), "Each supported test accepts its own angle observations.");
+            Check(new LocalPatientStore(root).OpenResult(patient, current.Id).ReplayTakeId.HasValue, "Version 1.1 history keeps source replay.");
+            var badSide = (JObject)valid.Result.DeepClone(); badSide["observations"]![0]!["side"] = "bilateral";
+            var saved = Path.Combine(store.OpenResult(patient, current.Id).DirectoryPath, "result.json");
+            File.WriteAllText(saved, badSide.ToString());
+            Reject(() => store.OpenResult(patient, current.Id), "Saved torso measurement cannot claim a unilateral side.");
+            File.WriteAllText(saved, valid.Result.ToString());
+            var badArtifact = store.OpenResult(patient, current.Id).ArtifactPath(valid.ArtifactId); File.WriteAllText(badArtifact, "BAD");
+            Reject(() => store.OpenResult(patient, current.Id), "Version 1.1 restores verify artifact checksums.");
+            File.WriteAllBytes(badArtifact, valid.Artifact);
+        }
+        var foot = store.CreateSession(patient, "barefoot"); store.BeginGuidedCapture(patient, foot.Id);
+        foreach (var view in new[] { "right", "front", "rear", "left" })
+        { var input = MakeGuidedCapture(root, foot, view); store.SaveGuidedTake(patient, foot.Id, input.Manifest.ToString(), input.Zip); }
+        store.CompleteGuidedCapture(patient, foot.Id, null);
+        var legacy = new Scenario(foot); legacy.Result["features"] = new JArray(new[] { "foot", "microscope" }.Select(name => new JObject { ["name"] = name, ["status"] = "unavailable", ["detail"] = "Historical barefoot" }));
+        using (var client = Client(store, legacy)) await client.ProcessAsync(patient, foot.Id);
+        Check((string?)new LocalPatientStore(root).OpenResult(patient, foot.Id).Manifest["schema_version"] == "1.0", "Historical barefoot 1.0 results reopen.");
+        var reprocessed = new Scenario(foot); reprocessed.Result["schema_version"] = "1.1"; reprocessed.Result["observations"] = new JArray();
+        reprocessed.Result["features"] = new JArray(legacy.Result["features"]!.Select(f => f.DeepClone()));
+        ((JArray)reprocessed.Result["features"]!).Add(new JObject { ["name"] = "observations", ["status"] = "unavailable", ["detail"] = "Walking metrics do not apply to historical barefoot." });
+        using (var client = Client(store, reprocessed)) await client.ProcessAsync(patient, foot.Id, reprocess: true);
+        Check(store.SavedResults(patient, foot.Id).Count == 2 && (string?)store.OpenResult(patient, foot.Id, legacy.ResultId).Manifest["schema_version"] == "1.0", "Reprocessing preserves original barefoot result version.");
+        var emptySession = store.CreateSession(patient, "elk"); var emptyCapture = MakeCapture(root, emptySession);
+        store.SaveCapture(patient, emptySession.Id, emptyCapture.Manifest.ToString(), emptyCapture.Zip);
+        var empty = new Scenario(emptySession); empty.Result["schema_version"] = "1.1"; empty.Result["observations"] = new JArray();
+        ((JArray)empty.Result["features"]!).Add(new JObject { ["name"] = "observations", ["status"] = "unavailable", ["detail"] = "Reconstruction unavailable" });
+        using var emptyClient = Client(store, empty);
+        Check(((JArray)(await emptyClient.ProcessAsync(patient, emptySession.Id)).Manifest["observations"]!).Count == 0, "Unavailable observations remain explicitly empty.");
     }
     static void GuidedCaptureBundle(string root, LocalPatientStore store, Guid patient, Guid otherPatient)
     {
@@ -220,7 +370,7 @@ static class WorkflowChecks
         metadata["frames"] = new JArray(times.Select((ns, i) => new JObject { ["frame_id"] = i, ["pts_ns"] = ns.ToString(), ["image_valid"] = failure != "invalid_frame" }));
         metadata["media"]!["presentation_time_us"] = new JArray(times.Select(ns => ((ns - times[0]) / 1000).ToString()));
         foreach (var item in new[] { take, metadata["capture"]! })
-        { item["view"] = failure == "wrong_view" ? "medial" : view; item["side"] = failure == "wrong_side" ? "bilateral" : session.TestType == "barefoot" ? footSide : "not_applicable"; item["condition"] = failure == "wrong_condition" ? "steady_hold" : session.TestType == "barefoot" ? "standing" : "seated"; }
+        { item["view"] = failure == "wrong_view" ? "medial" : view; item["side"] = failure == "wrong_side" ? "bilateral" : session.TestType == "barefoot" ? footSide : "not_applicable"; item["condition"] = failure == "wrong_condition" ? "steady_hold" : session.TestType == "barefoot" ? "standing" : session.TestType == "walking" ? "exercise" : "seated"; }
         if (failure == "undeclared_gap")
         { metadata["frames"] = new JArray(metadata["frames"]!.First!.DeepClone(), metadata["frames"]!.Last!.DeepClone()); metadata["media"]!["presentation_time_us"] = new JArray("0", "9966666"); }
         metadata["capture"]!["interrupted"] = failure == "interrupted";
@@ -407,11 +557,12 @@ static class WorkflowChecks
             sidecar = JObject.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "capture_sidecar.json")));
             take = Guid.Parse((string)sidecar["take_id"]!);
         }
+        if (session.TestType == "walking") sidecar["capture"]!["condition"] = "exercise";
         if (microscopeHold) sidecar["capture"]!["condition"] = "steady_hold";
         var metadata = Encoding.UTF8.GetBytes(sidecar.ToString());
         var manifest = new JObject { ["schema_version"] = "1.0", ["patient_id"] = session.PatientId.ToString(), ["session_id"] = session.Id.ToString(), ["test_type"] = session.TestType,
             ["protocol_id"] = session.TestType, ["protocol_version"] = "1.0", ["capture_completed_at"] = DateTimeOffset.UtcNow.ToString("O"), ["replay_take_id"] = take.ToString(),
-            ["takes"] = new JArray(new JObject { ["take_id"] = take.ToString(), ["kind"] = "full_body", ["view"] = "front", ["condition"] = "seated", ["side"] = "not_applicable", ["duration_s"] = useReplay ? 0.2 : 0.04,
+            ["takes"] = new JArray(new JObject { ["take_id"] = take.ToString(), ["kind"] = "full_body", ["view"] = "front", ["condition"] = sidecar["capture"]!["condition"]!.DeepClone(), ["side"] = "not_applicable", ["duration_s"] = useReplay ? 0.2 : 0.04,
                 ["video"] = FileEntry(videoName, video), ["frame_metadata"] = FileEntry(metadataName, metadata) }) };
         if (microscopeHold) { manifest.Remove("replay_take_id"); manifest["takes"]![0]!["kind"] = "microscope"; manifest["takes"]![0]!["condition"] = "steady_hold"; }
         var path = Path.Combine(root, Guid.NewGuid() + ".zip");
@@ -451,12 +602,39 @@ static class WorkflowChecks
             var replayId = Add("replay_manifest", "application/json", Encoding.UTF8.GetBytes(replay.ToString()));
             Result["replay"] = new JObject { ["source_take_id"] = replay["source_take_id"]!.DeepClone(), ["manifest_artifact_id"] = replayId.ToString() };
             Result["features"]![0]!["status"] = "available"; Result["features"]![1]!["status"] = "available"; Result["features"]![2]!["status"] = "available";
-            var evidence = new JObject { ["take_id"] = replay["source_take_id"]!.DeepClone(), ["start_s"] = 0, ["end_s"] = 0.04, ["first_frame_id"] = 100, ["last_frame_id"] = 101, ["condition"] = "seated", ["quality"] = "limited", ["quality_reason"] = "Synthetic test" };
+            var evidence = new JObject { ["take_id"] = replay["source_take_id"]!.DeepClone(), ["start_s"] = 0, ["end_s"] = 0.04, ["first_frame_id"] = 100, ["last_frame_id"] = 101, ["condition"] = Session.TestType == "walking" ? "exercise" : "seated", ["quality"] = "limited", ["quality_reason"] = "Synthetic test" };
             var microscope = Guid.NewGuid(); var video = new byte[] { 0, 0, 0, 16, 102, 116, 121, 112, 105, 115, 111, 109, 0, 0, 0, 0 };
             Result["microscopes"] = new JArray(new JObject { ["microscope_id"] = microscope.ToString(), ["method_id"] = "test", ["evidence"] = evidence.DeepClone(), ["region"] = "synthetic_upper", ["side"] = "not_applicable", ["status"] = "available", ["detail"] = "Synthetic test videos",
                 ["original_artifact_id"] = Add("microscope_original", "video/mp4", video).ToString(), ["amplified_artifact_id"] = Add("microscope_amplified", "video/mp4", video).ToString(), ["settings_artifact_id"] = ArtifactId.ToString() });
             Result["findings"] = new JArray(new JObject { ["finding_id"] = Guid.NewGuid().ToString(), ["method_id"] = "test", ["label_code"] = "synthetic", ["label"] = "Synthetic test finding", ["explanation"] = "Transport validation example, not an assessment", ["region"] = "synthetic_upper", ["side"] = "not_applicable", ["evidence"] = evidence.DeepClone(), ["limitations"] = new JArray("Synthetic data"),
                 ["metrics"] = new JArray(new JObject { ["name"] = "example", ["value"] = 12.5, ["unit"] = "degrees", ["basis"] = "pose_estimate", ["scale_status"] = "estimated", ["scale_provenance"] = "Synthetic test" }), ["highlight_joint_names"] = new JArray("high_tip"), ["microscope_id"] = microscope.ToString() });
+        }
+        public void AddObservations()
+        {
+            AddReplay(); Result["schema_version"] = "1.1";
+            // Synthetic transport fixture with every joint required by the supported angle definitions.
+            var descriptor = ((JArray)Result["artifacts"]!).Single(a => (string?)a["role"] == "replay_manifest");
+            var replayId = Guid.Parse((string)descriptor["artifact_id"]!); var replay = JObject.Parse(Encoding.UTF8.GetString(Files[replayId]));
+            var addedNames = new[] { "left_hip", "right_hip", "left_shoulder", "right_shoulder", "left_knee", "right_knee", "left_ankle", "right_ankle", "left_elbow", "right_elbow" };
+            foreach (var name in addedNames) { ((JArray)replay["joint_names"]!).Add(name); ((JArray)replay["joint_parents"]!).Add(0); }
+            replay["joint_count"] = 3 + addedNames.Length;
+            for (var frame = 0; frame < 4; frame++)
+                foreach (var name in addedNames) ((JArray)replay["joint_valid"]![frame]!).Add(frame != 2);
+            var binary = (JObject)replay["artifacts"]!["skeleton_joints"]!; var binaryId = Guid.Parse((string)binary["artifact_id"]!);
+            var original = Files[binaryId]; var expanded = new byte[4 * 13 * 3 * sizeof(float)];
+            for (var frame = 0; frame < 4; frame++) System.Array.Copy(original, frame * 3 * 3 * sizeof(float), expanded, frame * 13 * 3 * sizeof(float), 3 * 3 * sizeof(float));
+            Files[binaryId] = expanded; binary["byte_size"] = expanded.Length; binary["sha256"] = Hash(expanded);
+            var outer = ((JArray)Result["artifacts"]!).Single(a => (string?)a["artifact_id"] == binaryId.ToString()); outer["byte_size"] = expanded.Length; outer["sha256"] = Hash(expanded);
+            var replayBytes = Encoding.UTF8.GetBytes(replay.ToString()); Files[replayId] = replayBytes; descriptor["byte_size"] = replayBytes.Length; descriptor["sha256"] = Hash(replayBytes);
+            var observation = (JObject)Result["findings"]![0]!.DeepClone();
+            observation["observation_id"] = observation["finding_id"]!.DeepClone(); observation.Remove("finding_id");
+            observation.Remove("label_code"); observation.Remove("microscope_id");
+            observation["quantity_code"] = Session.TestType == "walking" ? "walking.trunk_lean" : Session.TestType == "rtk" ? "rtk.shoulder_pelvis_rotation" : "elk.lateral_torso_lean";
+            observation["metrics"]![0]!["scale_status"] = "not_required";
+            observation["metrics"]![0]!["unit"] = "deg";
+            Result["observations"] = new JArray(observation); Result["findings"] = new JArray();
+            Result["features"]![1]!["status"] = "unavailable";
+            ((JArray)Result["features"]!).Add(new JObject { ["name"] = "observations", ["status"] = "available", ["detail"] = "Model estimates only" });
         }
         public JObject Job()
         {

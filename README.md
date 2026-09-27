@@ -3,10 +3,10 @@
 Record a supported test through Meta Quest 3, then inspect a translucent blue body,
 aligned skeleton and source-linked evidence. The practitioner chooses corrections.
 
-**Last updated:** September 26, 2026. Capture, local patient history, processing,
+**Last updated:** September 27, 2026. Capture, local patient history, processing,
 replay import and the native Meta UI are implemented together. A public-video
 GVHMR run produced real geometry on an RTX 3070. A fresh Quest recording has not
-yet completed the full path. Automated ELK/RTK findings, automated foot assessment,
+yet completed the full path. Evaluated ELK/RTK findings and clinical gait assessment,
 a useful real Quest microscope result and on-device performance remain incomplete.
 See [the current handoff](docs/HANDOFF.md) for the exact verification boundary.
 
@@ -75,7 +75,9 @@ reconstruction succeeds. Barefoot close-ups do not produce a full-body replay.
 ### API request examples
 
 `CAPTURE_MANIFEST` and `CAPTURE_ZIP` identify a capture manifest and flat ZIP.
-Use protocol ID `elk`, `rtk` or `barefoot`, matching test type, and version `1.0`.
+Use protocol ID `elk`, `rtk` or `walking`, matching test type, and version `1.0`.
+Historical `barefoot` captures and results remain supported. Walking full-body
+takes use condition `exercise` and anatomical side `not_applicable`.
 These identify capture contracts, not clinically evaluated protocols.
 
 ```sh
@@ -132,16 +134,17 @@ real-video reconstruction and held-out assessment evaluation remain separate gat
 
 ## Required demonstration
 
-1. Select a patient and ELK seated flank stretch, RTK seated rotation or barefoot assessment.
+1. Select a patient and ELK seated flank stretch, RTK seated rotation or Walking review.
 2. Confirm consent and follow the capture guidance. Keep original recordings.
 3. Process and load the saved result. The **1–2 minute** whole-path target remains unmeasured.
 4. Walk around the body, scrub, reverse, step frames, change speed and manipulate its display.
-5. Open genuine findings and matching source evidence; unsupported methods explain their status.
+5. Open estimated movement observations and their actual source moments. Evaluated findings have separate availability; unsupported methods explain their status.
 6. Add a separate steady-hold take for microscope inspection and reopen dated tests from history.
 
-Foot assessment uses its own side/view/condition and calibration evidence. Motion
-magnification can amplify recording artifacts. Neither feature is complete merely
-because its capture or unavailable-state UI works.
+Walking review replaces new barefoot capture by user request. It reports fitted
+pose estimates with explicit limitations; saved foot records keep their original
+identity and unavailable automated-assessment status. Motion magnification can
+amplify recording artifacts and requires a useful, verified steady-hold result.
 
 | Document | Purpose |
 |---|---|

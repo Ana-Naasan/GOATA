@@ -286,7 +286,7 @@ namespace Physio.Capture
                 if(syntheticBenchmark) { FinishSyntheticBenchmark(times);return; }
                 bool incomplete=frames.Count<2 || !CaptureBundle.DurationComplete(frames[0].SourceNanoseconds,frames[frames.Count-1].SourceNanoseconds,targetDurationNs);
                 if(incomplete) { interrupted=true;Error="Recording stopped early. Record the full "+TargetDurationSeconds.ToString("0.#",CultureInfo.InvariantCulture)+" seconds to complete this view."; }
-                var metadata=CaptureBundle.Sidecar(take,width,height,frames,times,view,isMicroscopeHold?"steady_hold":test=="barefoot"?"standing":"seated",side,
+                var metadata=CaptureBundle.Sidecar(take,width,height,frames,times,view,isMicroscopeHold?"steady_hold":test=="barefoot"?"standing":test=="walking"?"exercise":"seated",side,
                     interrupted,intrinsics[0],intrinsics[1],intrinsics[2],intrinsics[3],missedTimes);
                 bool gaps=((JArray)metadata["capture"]["gaps"]).Count>0 || missedTimes.Count>0;
                 if(gaps) { metadata["capture"]["interrupted"]=true;Error="Some camera frames were missed. Retake before processing."; }

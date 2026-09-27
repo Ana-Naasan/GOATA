@@ -125,6 +125,61 @@ def _validate_findings(result, sources, methods, replay):
     return findings
 
 
+def _observation_evidence(observation, sources, replay):
+    evidence = observation["evidence"]
+    _evidence(evidence, sources)
+    _require(replay is not None and evidence["take_id"] == replay["source_take_id"],
+             "Observation requires its selected replay source")
+    take, sidecar, frames = sources[evidence["take_id"]]
+    _require(take["kind"] == "full_body" and not sidecar["capture"]["interrupted"],
+             "Observation requires complete full-body capture")
+    first, last = evidence["first_frame_id"], evidence["last_frame_id"]
+    origin = int(sidecar["clock"]["origin_pts_ns"])
+    start, end = evidence["start_s"], evidence["end_s"]
+    _require(abs(start - (int(frames[first]["pts_ns"]) - origin) / 1e9) <= 1e-9
+             and abs(end - (int(frames[last]["pts_ns"]) - origin) / 1e9) <= 1e-9,
+             "Observation endpoints must match exact source frames")
+    indices = {identifier: index for index, identifier in enumerate(replay["source_frame_ids"])}
+    _require(first in indices and last in indices, "Observation frame missing from replay")
+    quantity, side = observation["quantity_code"], observation["side"]
+    required = {"left_hip", "right_hip", "left_shoulder", "right_shoulder"}
+    if quantity == "walking.knee_flexion":
+        required = {f"{side}_hip", f"{side}_knee", f"{side}_ankle"}
+    names = required | set(observation.get("highlight_joint_names", []))
+    _require(names <= set(replay["joint_names"]), "Missing observation joints or unknown highlights")
+    joints = [replay["joint_names"].index(name) for name in names]
+    _require(all(replay["frame_valid"][index] and all(replay["joint_valid"][index][joint] for joint in joints)
+                 for index in range(indices[first], indices[last] + 1)), "Invalid observation replay sample")
+    _require(all(frame["image_valid"] for frame in frames.values()
+                 if int(frames[first]["pts_ns"]) <= int(frame["pts_ns"]) <= int(frames[last]["pts_ns"])),
+             "Observation crosses invalid capture sample")
+    gaps = [(gap["start_s"], gap["end_s"]) for gap in replay["gaps"]]
+    gaps += [((int(gap["start_pts_ns"]) - origin) / 1e9, (int(gap["end_pts_ns"]) - origin) / 1e9)
+             for gap in sidecar["capture"]["gaps"]]
+    _require(all(end < left or start > right for left, right in gaps), "Observation crosses a source gap")
+
+
+def _validate_observations(result, sources, methods, replay, features):
+    if result["schema_version"] == "1.0":
+        return
+    observations = _index(result["observations"], "observation_id")
+    _require((features["observations"]["status"] == "available") == bool(observations),
+             "Observation availability mismatch")
+    for observation in observations.values():
+        _require(observation["method_id"] in methods, "Unknown observation method")
+        quantity, test = observation["quantity_code"], result["test_type"]
+        _require(quantity.startswith(test + "."),
+                 "Observation quantity differs from selected test")
+        sided = quantity == "walking.knee_flexion"
+        _require(observation["side"] in ({"left", "right"} if sided else {"not_applicable"}),
+                 "Observation side differs from quantity")
+        expected_conditions = {"exercise"} if test == "walking" else {"seated", "exercise"}
+        _require(observation["evidence"]["condition"] in expected_conditions,
+                 "Observation condition differs from protocol")
+        _index(observation["metrics"], "name")
+        _observation_evidence(observation, sources, replay)
+
+
 def _validate_microscopes(result, sources, artifacts, methods, findings):
     microscopes = _index(result["microscopes"], "microscope_id")
     for microscope in microscopes.values():
@@ -168,6 +223,8 @@ def validate_result(result: dict, record: dict, input_dir: Path, output_dir: Pat
     expected = {"foot", "microscope"} if capture["test_type"] == "barefoot" else {"replay", "movement", "microscope"}
     if capture["test_type"] == "barefoot" and "replay_take_id" in capture:
         expected.add("replay")
+    if result["schema_version"] == "1.1":
+        expected.add("observations")
     _require(set(features) == expected, "Result features do not match selected test")
     for method in methods.values():
         item = artifacts.get(method["settings_artifact_id"])
@@ -180,6 +237,7 @@ def validate_result(result: dict, record: dict, input_dir: Path, output_dir: Pat
              "Replay availability differs from artifacts")
     _require(all(item["role"] not in {"replay_manifest", "replay_binary"} or identifier in files
                  for identifier, item in artifacts.items()), "Unreferenced replay artifact")
+    _validate_observations(result, sources, methods, replay, features)
     findings = _validate_findings(result, sources, methods, replay)
     analysis = "foot" if capture["test_type"] == "barefoot" else "movement"
     _require(not findings or features[analysis]["status"] == "available", "Unavailable analysis has findings")

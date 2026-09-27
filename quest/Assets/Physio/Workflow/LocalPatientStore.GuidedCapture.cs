@@ -212,7 +212,7 @@ namespace Physio.Workflow
             var takes = (JArray)manifest["takes"]!; Require(takes.Count == 1, "Save one independent viewpoint recording at a time.");
             var take = takes[0]!; var foot = session.TestType == "barefoot";
             Require(GuidedViews.Contains((string)take["view"]!) && (string?)take["kind"] == (foot ? "foot_closeup" : "full_body") &&
-                (string?)take["side"] == (string?)plan["foot_side"] && (string?)take["condition"] == (foot ? "standing" : "seated"), "Recording differs from the guided capture settings.");
+                (string?)take["side"] == (string?)plan["foot_side"] && (string?)take["condition"] == (foot ? "standing" : session.TestType == "walking" ? "exercise" : "seated"), "Recording differs from the guided capture settings.");
             var duration = Number(take["duration_s"]); Require(duration >= Number(plan["duration_s"]) - 1.0 / 30 - 1e-6 && duration <= Number(plan["duration_s"]) + 1.0 / 30 + 1e-6, "Record the complete selected duration before continuing.");
         }
         private static void ValidateGuidedSidecar(JObject sidecar, JToken take, JObject plan)

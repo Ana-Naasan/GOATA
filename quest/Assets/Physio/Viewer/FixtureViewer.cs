@@ -479,6 +479,7 @@ namespace Physio.Viewer
                 bone.SetPosition(1, ToUnity(replay.JointAt(sample.Index, i)));
             }
 
+            UpdateRegionMarker();
             UpdateInteractionBounds(localBounds);
             Debug.Log($"PHYSIO_VIEWER_FRAME: frame_index={sample.Index} source_frame_id={sample.SourceFrameId} source_time={sample.SourceTime:0.###} observed={observed} playing={clock.IsPlaying} speed={clock.Speed:0.##} direction={clock.Direction}");
         }

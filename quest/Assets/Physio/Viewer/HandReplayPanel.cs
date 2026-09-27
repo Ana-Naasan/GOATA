@@ -39,6 +39,8 @@ namespace Physio.Viewer
         [SerializeField] private TMP_Text? titleLabel;
         [SerializeField] private TMP_Text? statusLabel;
         [SerializeField] private TMP_Text? timeLabel;
+        [SerializeField] private TMP_Text? evidenceLabel;
+        [SerializeField] private RectTransform? evidenceRange;
         [SerializeField] private TMP_Text? playPauseLabel;
         [SerializeField] private TMP_Text? reverseLabel;
         [SerializeField] private TMP_Text? speedLabel;
@@ -100,6 +102,26 @@ namespace Physio.Viewer
             seekSlider.maxValue = endTime;
             seekSlider.wholeNumbers = false;
             seekSlider.SetValueWithoutNotify(startTime);
+        }
+
+        public void SelectEvidence(double start, double end, string region)
+        {
+            if (evidenceLabel != null) evidenceLabel.text = $"{region} · source {start:0.00}" + (end == start ? "s · selected frame" : $"–{end:0.00}s");
+            if (evidenceRange == null || seekSlider == null) return;
+            var span = seekSlider.maxValue - seekSlider.minValue;
+            if (span <= 0) return;
+            var left = Mathf.Clamp01(((float)start - seekSlider.minValue) / span);
+            var right = Mathf.Clamp01(((float)end - seekSlider.minValue) / span);
+            evidenceRange.anchorMin = new Vector2(left, 0);
+            evidenceRange.anchorMax = new Vector2(right, 1);
+            evidenceRange.offsetMin = new Vector2(-2, 0); evidenceRange.offsetMax = new Vector2(2, 0);
+            evidenceRange.gameObject.SetActive(true);
+        }
+
+        public void ClearEvidence()
+        {
+            if (evidenceLabel != null) evidenceLabel.text = "";
+            if (evidenceRange != null) evidenceRange.gameObject.SetActive(false);
         }
 
         public void ApplyState(State state)

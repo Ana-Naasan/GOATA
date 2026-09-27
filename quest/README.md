@@ -1,10 +1,18 @@
 # Quest app
 
-**Last updated:** September 26, 2026. The original integration merged in PR #10
-(`main` baseline `fbbe24f`, including Mohammad's `20cf164`). Follow-up source
-`cba5dc9` built and installed as build 6. Two cold launches each recorded all 90
-synthetic frames at 30 fps with verified mux timestamps and zero drops.
-Real-camera recording, wearer acceptance and clinical requirements remain incomplete.
+**Last updated:** September 27, 2026. Walking review and estimated observations
+are implemented on `codex/walking-insights`, based on `main` at `3bad1a7` (PR #11).
+`docs/HANDOFF.md` records the current build and device proof. The previous capture
+build recorded all 90 synthetic frames at 30 fps on two cold launches; this does
+not verify real-camera recording. Wearer acceptance and clinical evaluation remain
+incomplete.
+
+The September 27 insights APK built and installed on Quest 3; installed SHA-256:
+`91920fa27f6f3d860b3bdd4a67e519b46c1543fb771b8ea687c7326c2131f3b9`.
+The headset contains an isolated **PUBLIC DEMO - WALKING** saved result from a
+fresh public-video GPU run. It is a fixture with adapted capture metadata, not a
+participant assessment. The app still needs a configured authenticated processing
+service for new captures; device UI/video-seek acceptance remains pending.
 
 ## Open and build
 
@@ -52,7 +60,7 @@ focus and valid tracked position/orientation instead of using an untracked pose.
 
 - **Patients:** create a locally stored name and choose a dated saved test. Names
   stay on the headset; UUIDs isolate patients, including identical display names.
-- **Tests:** ELK seated flank stretch, RTK seated torso rotation or barefoot.
+- **Tests:** ELK seated flank stretch, RTK seated torso rotation or Walking review.
   Captures require consent confirmation and show test/view/side context.
 - **Capture:** choose 5, 10 or 15 seconds per take, default 10, then record the
   patient's **right → front → back → left** views. Duration is fixed after the
@@ -61,9 +69,13 @@ focus and valid tracked position/orientation instead of using an untracked pose.
   automatic completion, stop, interruption and retry are explicit states.
 - **Saved views:** each performance stays separate with immutable originals and
   retakes. Progress and selected takes recover after restart/crash. Choose one
-  ELK/RTK take for 3D replay after all four views are saved. Other views remain
+  ELK/RTK/Walking take for 3D replay after all four views are saved. Other views remain
   evidence; they are never fused into a simultaneous performance.
-- **Barefoot capture:** four standing close-ups around one selected foot, with
+- **Walking capture:** four independent straight passes. Keep the full body and
+  feet visible, leave a clear path and remain at the selected camera position
+  during each pass. Front approaches the camera, back moves away and side views
+  cross the image. This is a review workflow, not a validated clinical gait test.
+- **Historical barefoot capture:** four standing close-ups around one selected foot, with
   anatomical side fixed after the first saved view. No body replay is produced.
   This collection sequence is not a clinically validated foot protocol.
 - **Processing:** enter the HTTPS service URL and token through Options/system
@@ -72,12 +84,18 @@ focus and valid tracked position/orientation instead of using an untracked pose.
 - **Review:** play/pause, full timeline, reverse, frame steps, restart and
   0.25×/0.5×/1×/1.5×/2× speed. Body and skeleton share one display transform;
   moving/resizing them never changes stored measurements.
-- **Evidence:** matching-take findings seek the replay, show the detached timeline
-  and highlight joints only inside the finding interval. Other-take original
-  video opens with the body paused. Details show method/version, quality,
-  measurements and limitations. Video seeking uses the encoded timestamp mapping.
-  Foot results without replay clear any earlier body. These controls do not create
-  findings: current processing still returns none and explains unavailable methods.
+- **Insights:** up to three compact observation cards beside the replay show
+  estimated angles, source view/time and a limitation. Selecting a card pauses at
+  its measured source frame, marks the detached timeline and labels/brackets the
+  region. Details include method/version and all limitations. Assessment has a
+  separate tab and remains unavailable until an evaluated method exists.
+- **Evidence:** matching-take observations/findings seek the replay and highlight
+  only their own interval. Other-take originals open with the body paused. The
+  larger video view opens paused at the encoded source time; **Play full recording**
+  supplies context and **Return to peak** restores the measured moment. Original
+  evidence never changes when the display is resized or playback speed changes.
+  Historical result 1.0 and barefoot records remain readable; foot results without
+  replay clear any earlier body. Clinical `findings` remain empty.
 - **Microscope:** add a separate steady-hold recording to the selected test.
   A new saved assessment preserves the primary take and earlier versions.
   Source/amplified views show their own interval, crop, settings and limitations.
@@ -297,7 +315,7 @@ evidence/replay. Synthetic success does not establish real capture acceptance.
   UI/recording fix and does not prove the new path.
 
 Still required: a fresh consented capture through actual service/GPU to saved
-Quest replay, body/skeleton/axis inspection, real ELK/RTK/foot methods, useful
+Quest replay, body/skeleton/axis inspection, evaluated ELK/RTK methods and walking estimates, useful
 steady-hold magnification, patient/retry/restart rehearsal and measured active
 72 Hz / 250 ms seek / 1–2 minute full-path performance.
 

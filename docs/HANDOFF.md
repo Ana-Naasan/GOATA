@@ -1,12 +1,146 @@
 # Codex session handoff
 
-**Last updated:** September 26, 2026. [PR #10](https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp/pull/10)
-merged as `fbbe24f`. The spatial capture follow-up built and installed successfully.
-Build 6 recorded all 90 scheduled synthetic frames at 30 fps with verified mux
-timestamps and zero drops on two cold launches. Real-camera capture and wearer
-acceptance remain pending; M1 and the clinical requirements are still incomplete.
+**Last updated:** September 27, 2026. Walking review and source-linked estimated
+insights are implemented on `codex/walking-insights` in
+`/Users/baderasadi/.codex/worktrees/hamza-quest/HTH`, based on `main` at `3bad1a7`
+([PR #11](https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp/pull/11), including
+Mohammad's PR #10). M1 and clinical evaluation remain incomplete: no fresh Quest
+participant recording has completed capture → GPU → loaded saved review.
 
-## Current state
+## Walking and insights checkpoint
+
+The user approved the plan in `docs/INSIGHTS_PLAN.md` and replaced **new** barefoot
+capture with Walking review. The three new choices are ELK, RTK and Walking.
+Historical barefoot drafts/results/reprocessing retain their identity and readers.
+Walking uses four independent right/front/back/left passes, full body and feet in
+view, with one selected source take for replay. It is not a validated gait test.
+
+Result schema **1.1** adds bounded estimated `observations`; capture/replay remain
+1.0. Historical result 1.0 remains strict and readable. Existing GVHMR joints feed
+one deterministic geometry helper: ELK lateral torso lean, RTK absolute shortest
+shoulder/pelvis rotation, Walking left/right knee flexion and unsigned trunk lean.
+Each peak retains its exact original frame/time/take. Invalid or degenerate samples
+are unavailable, not zero. Finite fitted joints do not establish visibility or
+anatomical accuracy. Clinical `findings` stay empty and assessment unavailable.
+
+The Meta UI Set board has observation cards, a separate Assessment tab, source
+labels, limitations, method details, a region bracket/label and timeline marker.
+The larger original view opens paused at the measured source moment; explicit
+full-recording playback supplies context and Return to peak restores evidence.
+Version/date/patient context and the existing capture-to-display timing label stay
+visible. An optional wrist Insights shortcut opens review. Physical readability,
+hand reach and actual VideoPlayer seeking still need wearer acceptance.
+
+Main changed files: `processing/analysis/observations.py`, `pipeline.py`,
+`publication.py`, `docs/openapi.yaml`; Quest `WorkflowValidation.cs`, patient store
+and capture protocol checks; `InsightPresentation.cs`, `WorkflowPanel.Insights.cs`,
+`EvidencePanel.cs`, viewer region/timeline bindings and `HandReviewSceneBuilder.cs`;
+their Python/C# checks and scope/runbook documentation. No new dependency, chat
+model, queue or server framework was added.
+
+### Automated verification
+
+- Python: **398 passed, 177 subtests passed**, one existing warning; combined
+  processing line/branch coverage **90.20%**. Geometry helper **98.51%**, pipeline
+  **92%**, publication **98%**. Native GVHMR inference remains mostly outside unit
+  coverage and was exercised separately below.
+- C#: Workflow **673**, Capture **104**, UI evidence **33**, Spatial **26** checks;
+  Replay **136**, Importer **173** and authored Demo **19,827** checks also passed.
+  Workflow coverage **99.33% lines / 84.76% branches**; Capture **100% / 98.68%**;
+  presentation helpers **98.43% / 77.65%** and spatial presentation **100% / 84.09%**.
+  These exclude Unity, camera/GPU/JNI, native video playback and physical input.
+- Python, C# and general code/security reviews approved with no blocking findings.
+  Reviewed compatibility, bounded artifacts, patient/take isolation and source
+  mappings. No credentials, recordings, weights or build artifacts were added.
+- Ruff, contract fixture validation and dependency audit passed. `dotnet format`
+  reports whitespace diagnostics in the compact `WorkflowChecks.cs`; its build and
+  checks pass. This is not a formatting-clean claim.
+
+Commands from the worktree (proof reports under
+`/Users/baderasadi/Library/Caches/HTH/insights-proof/`):
+
+```sh
+.venv/bin/python -m pytest --cov=processing --cov-branch --cov-report=term-missing --cov-report=json:/Users/baderasadi/Library/Caches/HTH/insights-proof/python-coverage.json -q
+.venv/bin/ruff check processing tests
+.venv/bin/pip-audit --progress-spinner off
+.venv/bin/python -m processing.contracts validate tests/contracts/fixtures
+/Users/baderasadi/Library/Caches/HTH/dotnet/dotnet run --project quest/Checks/WorkflowChecks.csproj --no-restore
+# Same command for Replay, Importer, Capture, UIEvidence, SpatialCapture and Demo.
+```
+
+### Fresh GPU proof
+
+Fresh SSH after group membership changed confirms `bader` has Docker access.
+The existing `physio-gvhmr:ee960bb` image on the RTX 3070 ran the public WHAM
+football-field walking clip (8.075 seconds, 242 source frames) in **57.783 seconds**.
+This is inference CLI time, excluding upload/download and Quest loading.
+The sidecar uses explicitly adapted fixture clock/condition metadata; it does not
+prove Quest calibration or clinical accuracy. No participant capture was uploaded.
+
+Image identity:
+`sha256:66db73a15b803aa99aa47f8929ec2acd7e5d30ee84332dad8c1b62e254beeddc`.
+GVHMR revision: `ee960bb6e2ea2d381aa97f08e9b71ef320b624b1`.
+Input SHA-256: `c010567f80e5813c2d1e2811510062dcf9de5a9190a7084c3e253b75ed11b895`.
+Remote proof: `/home/bader/physio-reconstruction/insights-proof.UJO3hy/`.
+The container ran as UID/GID 1001, without networking, with read-only source,
+checkpoint and input mounts, bounded memory/CPU/time and an isolated output folder.
+Existing weights were reused; no new model or clinical dataset was installed.
+Verified image runtime: PyTorch **2.3.0+cu121**, torchvision **0.18.0+cu121**,
+NumPy **1.23.5**, PyAV **13.0.0**, SMPL-X **0.1.28**, pycolmap **4.2.0** and
+Ultralytics **8.2.42**. The proof JSON records each model asset's SHA-256.
+
+The fresh 32.57 MB native handoff downloaded in 13.292 seconds. Current local
+pipeline code then copied the precomputed GPU boundary, exported the body/joints,
+attempted the real microscope gates and generated observations in 7.479 seconds;
+publication validation took 0.689 seconds. All source/archive/native hashes matched.
+The 242-frame, 22-joint replay produced three estimates: left knee 78.06° at original
+frame 178, right knee 79.01° at frame 163, trunk inclination 4.12° at frame 9.
+These are software outputs, not accuracy claims. The microscope correctly remained
+unavailable because background features did not cover enough of the image.
+Proof and exact stage commands: `insights-proof/fresh-publication-proof.json` and
+`run_fresh_publication_proof.py` under the cache root above. GPU and local stages
+were separate; their durations must not be presented as a Quest end-to-end result.
+
+The strict C# client saved the public capture, validated result 1.1 and artifact
+hashes, imported 242 frames / 22 joints / 10,475 vertices, then reopened the saved
+result after recreating the store. Desktop import took 0.195 seconds and reopen
+0.157 seconds; these exclude Quest rendering. The isolated fixture is labelled
+**PUBLIC DEMO - WALKING**, with patient UUID
+`90e3a7ab-f268-4efb-b60a-b81d96bd215c` and session UUID
+`8e323675-63ba-45fe-a694-da817995a6f8`. Its cache archive contains only those paths;
+do not overwrite another patient or session when copying it for device testing.
+
+### Quest build and installation
+
+Unity **6000.0.66f2** completed `FixtureBuild.Build` successfully; log:
+`insights-proof/unity-build.log`. Native hand/controller rig validation passed.
+The APK is **85,583,680 bytes**, SHA-256
+`91920fa27f6f3d860b3bdd4a67e519b46c1543fb771b8ea687c7326c2131f3b9`.
+`adb -s 2G97C5ZH95010L install -r quest/Builds/PhysioFixture.apk` succeeded;
+the installed package's SHA-256 matches. All 105 frozen source inputs match after
+restoring the known build-generated scene/font/settings changes. The generated
+scene is preserved in the proof cache; `FixtureBuild.Build` regenerates it from
+the reviewed scene builder. No new runtime code changed after this build.
+
+The isolated public demo was copied into the existing app store only after both
+UUID paths were confirmed absent; all **13 files** matched their cache hashes.
+Other patients/settings were preserved. `am start -W` reported a successful cold
+launch; PID 32444 logs reached tracked-head placement and `PHYSIO_VIEWER_READY`
+without managed exceptions in the startup sample. The local screenshot confirms
+passthrough, hand tracking and the workspace Options surface, not the insight or
+video interaction acceptance. Proof: `startup-proof.json`, `quest-startup.log`,
+`device-public-demo-proof.json`; screenshot remains local, outside Git.
+
+Current next task: wearer opens **PUBLIC DEMO - WALKING**, verifies all three
+cards, source-peak seeking, full-recording playback and return-to-peak. The device
+currently has no processing URL/token configured, and Wi-Fi reports disconnected.
+The 1.1-capable client is installed; remote service deployment/configuration is
+still required before fresh captures can use it. Then test a consenting real
+Walking take, four-view progression, saved review, original-frame agreement and
+measured full turnaround. Evaluated ELK/RTK clinical labels and useful real-camera
+microscope output remain incomplete. Older checkpoints below are historical evidence.
+
+## PR #11 build checkpoint
 
 - Working branch: `codex/hamza-quest`, checkout
   `/Users/baderasadi/.codex/worktrees/hamza-quest/HTH`, based on `main` at `fbbe24f`.

@@ -12,10 +12,13 @@ namespace Physio.Viewer
             !double.IsNaN(start) && !double.IsInfinity(start) &&
             !double.IsNaN(end) && !double.IsInfinity(end) && start >= 0 && end >= start;
 
+        public static string[] NewTests() => new[] { "elk", "rtk", "walking" };
+
         public static string TestName(string test) => test switch
         {
             "elk" => "KERAAL ELK · seated flank stretch",
             "rtk" => "KERAAL RTK · seated torso rotation",
+            "walking" => "Walking review",
             "barefoot" => "Barefoot assessment",
             _ => throw new ArgumentException("Unknown test.", nameof(test))
         };

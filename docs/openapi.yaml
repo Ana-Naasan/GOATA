@@ -261,7 +261,7 @@ components:
       pattern: '^[a-f0-9]{64}$'
     TestType:
       type: string
-      enum: [elk, rtk, barefoot]
+      enum: [elk, rtk, walking, barefoot]
     InputFile:
       type: object
       additionalProperties: false
@@ -289,7 +289,7 @@ components:
         array binding verified mux timestamps to the preserved original frames.
         The decoder verifies every timestamp before accepting that mapping.
 
-        For elk/rtk require a replay_take_id referencing a full_body take in this
+        For elk/rtk/walking require a replay_take_id referencing a full_body take in this
         manifest. For barefoot require at least one foot_closeup; optional replay
         must still reference a full_body take explicitly included here for this
         same patient. Independent repetitions remain separate takes; do not fuse
@@ -301,7 +301,7 @@ components:
         test_type: {$ref: '#/components/schemas/TestType'}
         protocol_id:
           type: string
-          enum: [elk, rtk, barefoot]
+          enum: [elk, rtk, walking, barefoot]
           description: Must match test_type. Provisional capture identifier; not an evaluated clinical protocol.
         protocol_version: {type: string, const: '1.0'}
         capture_completed_at: {type: string, format: date-time}
@@ -314,7 +314,7 @@ components:
       allOf:
         - if:
             properties:
-              test_type: {enum: [elk, rtk]}
+              test_type: {enum: [elk, rtk, walking]}
           then:
             required: [replay_take_id]
             properties:
@@ -323,6 +323,22 @@ components:
                 contains:
                   properties:
                     kind: {const: full_body}
+        - if:
+            properties:
+              test_type: {const: walking}
+          then:
+            properties:
+              takes:
+                items:
+                  properties:
+                    side: {const: not_applicable}
+                  oneOf:
+                    - properties:
+                        kind: {const: full_body}
+                        condition: {const: exercise}
+                    - properties:
+                        kind: {const: microscope}
+                        condition: {const: steady_hold}
         - if:
             properties:
               test_type: {const: barefoot}
@@ -421,7 +437,7 @@ components:
         recording", with the hologram paused. Equal elapsed seconds across takes
         do not establish correspondence between performances.
       properties:
-        schema_version: {type: string, const: '1.0'}
+        schema_version: {type: string, enum: ['1.0', '1.1']}
         result_id: {type: string, format: uuid}
         job_id: {type: string, format: uuid}
         session_id: {type: string, format: uuid}
@@ -449,6 +465,10 @@ components:
           properties:
             source_take_id: {type: string, format: uuid}
             manifest_artifact_id: {type: string, format: uuid}
+        observations:
+          type: array
+          maxItems: 16
+          items: {$ref: '#/components/schemas/Observation'}
         findings:
           type: array
           items: {$ref: '#/components/schemas/Finding'}
@@ -459,6 +479,24 @@ components:
         artifacts:
           type: array
           items: {$ref: '#/components/schemas/Artifact'}
+      allOf:
+        - if:
+            properties:
+              schema_version: {const: '1.1'}
+          then:
+            required: [observations]
+            properties:
+              features:
+                contains:
+                  properties:
+                    name: {const: observations}
+          else:
+            not: {required: [observations]}
+            properties:
+              features:
+                items:
+                  properties:
+                    name: {enum: [replay, movement, foot, microscope]}
     Method:
       type: object
       additionalProperties: false
@@ -478,13 +516,15 @@ components:
       additionalProperties: false
       required: [name, status, detail]
       description: |
-        Unique names. Include replay+movement for elk/rtk, foot for barefoot and
-        microscope for each test. available means an artifact/analysis exists;
+        Unique names. Include replay+movement for elk/rtk/walking, foot for barefoot and
+        microscope for each test. Version 1.1 also requires observations; available
+        means at least one estimated observation, never a clinical assessment.
+        For other features, available means an artifact/analysis exists;
         validation_status remains research_demo_unvalidated. Omit replay from a
         foot-only result. Reasons must distinguish poor capture, unsupported
         method, missing calibration and processing failure.
       properties:
-        name: {type: string, enum: [replay, movement, foot, microscope]}
+        name: {type: string, enum: [replay, movement, foot, microscope, observations]}
         status: {type: string, enum: [available, unavailable]}
         detail: {type: string, minLength: 1, maxLength: 500}
     EvidenceInterval:
@@ -544,6 +584,58 @@ components:
           type: string
           format: uuid
           description: Optional reference to a microscope result with matching source evidence.
+    Observation:
+      type: object
+      additionalProperties: false
+      required: [observation_id, method_id, quantity_code, label, explanation, region, side, evidence, limitations, metrics]
+      description: |
+        Version 1.1 estimated geometry only; no diagnosis, correctness label or
+        clinical confidence. A finite fitted joint is not a visibility score.
+        Bind to this result's selected replay source, valid original frames and
+        exact endpoint times; never bridge a capture/replay gap. Quantity must
+        match test_type; knee quantities require left/right side, torso
+        quantities not_applicable. All metrics are finite pose-estimated angles
+        in degrees with no physical-scale claim. Methods retain settings artifacts.
+        Independently of optional highlights, torso quantities require valid left
+        and right hip/shoulder joints; knee quantities require the named side's
+        hip/knee/ankle. Every sample in the evidence interval must be valid.
+      properties:
+        observation_id: {type: string, format: uuid}
+        method_id: {type: string, minLength: 1, maxLength: 80}
+        quantity_code:
+          type: string
+          enum: [elk.lateral_torso_lean, rtk.shoulder_pelvis_rotation, walking.knee_flexion, walking.trunk_lean]
+        label: {type: string, minLength: 1, maxLength: 160}
+        explanation: {type: string, minLength: 1, maxLength: 1000}
+        region: {type: string, minLength: 1, maxLength: 80}
+        side: {type: string, enum: [left, right, not_applicable]}
+        evidence:
+          allOf:
+            - {$ref: '#/components/schemas/EvidenceInterval'}
+            - properties:
+                quality: {const: limited}
+        limitations:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items: {type: string, minLength: 1, maxLength: 500}
+        metrics:
+          type: array
+          minItems: 1
+          maxItems: 4
+          items:
+            allOf:
+              - {$ref: '#/components/schemas/Metric'}
+              - properties:
+                  value: {minimum: -180, maximum: 180}
+                  unit: {const: deg}
+                  basis: {const: pose_estimate}
+                  scale_status: {const: not_required}
+        highlight_joint_names:
+          type: array
+          maxItems: 22
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 80}
     Metric:
       type: object
       additionalProperties: false
