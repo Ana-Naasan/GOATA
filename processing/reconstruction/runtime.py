@@ -7,6 +7,7 @@ import math
 import sys
 import time
 from bisect import bisect_left
+from contextlib import contextmanager
 from fractions import Fraction
 from itertools import pairwise
 from pathlib import Path
@@ -170,11 +171,30 @@ def bind_pts(frames, decoded, offset_ns, media=None):
     return positions
 
 
+@contextmanager
+def video_reader(path):
+    """Close PyAV 13 decoder threads now, not when cyclic GC eventually runs.
+
+    Adapted from experiments/persistent_inference/buffered.py. PyAV 16 removed
+    CodecContext.close; its container handles that cleanup instead.
+    """
+    import av
+    with av.open(str(path)) as source:
+        try:
+            yield source
+        finally:
+            for stream in source.streams.video:
+                codec = stream.codec_context
+                close = getattr(codec, 'close', None)
+                if close is not None and codec.is_open:
+                    close()
+
+
 def prepare_video(video, destination, plan, offset_ns):
     import av
     # Decode twice: first establish timestamp identity, then encode selected images.
     decoded = []
-    with av.open(str(video)) as container:
+    with video_reader(video) as container:
         if len(container.streams.video) != 1:
             raise ValueError('require exactly one video stream')
         stream = container.streams.video[0]
@@ -196,7 +216,7 @@ def prepare_video(video, destination, plan, offset_ns):
     selections = plan['selected_indices']
     cursor = 0
     decoded_count = 0
-    with av.open(str(video)) as source, av.open(str(destination), 'w') as output:
+    with video_reader(video) as source, av.open(str(destination), 'w') as output:
         source.streams.video[0].codec_context.options = {'max_pixels': str(MAX_IMAGE_PIXELS)}
         stream = output.add_stream('libx264', rate=30)
         stream.width, stream.height = plan['width'], plan['height']
@@ -219,7 +239,7 @@ def prepare_video(video, destination, plan, offset_ns):
             output.mux(packet)
     if decoded_count != len(decoded) or cursor != len(selections) or destination.stat().st_size > MAX_MEDIA_BYTES:
         raise ValueError('incomplete or oversized prepared video')
-    with av.open(str(destination)) as check:
+    with video_reader(destination) as check:
         actual = [Fraction(f.pts) * f.time_base for f in check.decode(video=0)]
     if actual != [Fraction(i, 30) for i in range(len(selections))]:
         raise ValueError('prepared video PTS do not match the selected 30Hz sequence')
@@ -274,12 +294,15 @@ def infer(video, plan, output):
     return infer_native(video, plan, output)
 
 
-def run(video, sidecar, output, offset_ns, allow_estimated_intrinsics, allow_unverified_pinhole=False):
+def run(video, sidecar, output, offset_ns, allow_estimated_intrinsics, allow_unverified_pinhole=False,
+        *, inferer=None, require_media_mapping=False):
     started = time.monotonic()
     if not video.is_file() or not 0 < video.stat().st_size <= MAX_MEDIA_BYTES:
         raise ValueError('video must be a local file of 1 byte to 512MiB')
     sidecar_digest = digest(sidecar)
     doc = load_json(sidecar)
+    if require_media_mapping and (type(doc) is not dict or 'media' not in doc or offset_ns != 0):
+        raise ValueError('resident inference requires explicit media PTS mapping and zero offset')
     plan = plan_input(doc, allow_estimated_intrinsics, allow_unverified_pinhole)
     output.mkdir(parents=False, exist_ok=False)
     original_digest = digest(video)
@@ -291,13 +314,14 @@ def run(video, sidecar, output, offset_ns, allow_estimated_intrinsics, allow_unv
         raise ValueError('source video or sidecar changed during preparation')
     write_json(output / 'selection.json', plan)
     preparation_s = time.monotonic() - started
-    result = infer(prepared, plan, output)
+    result = (infer if inferer is None else inferer)(prepared, plan, output)
     result.update({'schema_version': 'gvhmr-native-1', 'take_id': doc['take_id'],
                    'upstream_commit': UPSTREAM_COMMIT, 'source_video_sha256': original_digest,
                    'source_sidecar_sha256': sidecar_digest, 'selection': 'selection.json',
                    'adapter_sha256': {
                        **{name: digest(Path(__file__).with_name(name))
-                          for name in ('runtime.py', 'gvhmr.py', 'native.py', 'timing.py')},
+                          for name in ('runtime.py', 'gvhmr.py', 'native.py', 'timing.py') +
+                          (('resident.py', 'resident_models.py') if 'resident' in result else ())},
                        'media_timing.py': digest(Path(__file__).resolve().parents[1] / 'media_timing.py')},
                    'intrinsics_status': plan['intrinsics_status'],
                    'camera_motion': 'moving camera, SIFT/pycolmap relative rotation; no Quest-pose fusion',

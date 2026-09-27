@@ -1,18 +1,21 @@
-"""One local GPU subprocess, verified native export and honest feature status."""
+"""Local GPU inference, verified native export and honest feature status."""
 
-import os
 import shutil
-import signal
-import stat
 import struct
 import subprocess
 import time
-from pathlib import Path
 from uuid import uuid4
 
 from processing.contracts import read_json_file
 from processing.export import artifact, export_native, write_json
 from processing.media_timing import validate_media_mapping
+from processing.resident import (
+    ResidentCleanupError,
+    ResidentError,
+    child_environment,
+    stop_process,
+    workspace_budget,
+)
 from processing.storage import now
 
 
@@ -20,70 +23,61 @@ class PipelineError(RuntimeError):
     """Only static, safe messages from this module may cross the worker boundary."""
 
 
+class PipelineCleanupError(PipelineError):
+    """The service must retain job output and reject further work."""
+
+    def __init__(self):
+        super().__init__(str(ResidentCleanupError()))
+
+
 def _workspace_budget(path, limit):
-    if not path.exists() and not path.is_symlink():
-        return
-    pending, total, entries = [path], 0, 0
-    while pending:
-        current = pending.pop()
-        details = current.lstat()
-        entries += 1
-        if entries > 128:
-            raise PipelineError("Inference output exceeds its file-count budget.")
-        if stat.S_ISLNK(details.st_mode):
-            raise PipelineError("Inference produced linked output; it cannot be published.")
-        if stat.S_ISDIR(details.st_mode):
-            pending.extend(current.iterdir())
-        elif stat.S_ISREG(details.st_mode):
-            total += details.st_size
-        else:
-            raise PipelineError("Inference produced an unsupported output file.")
-        if total > limit:
-            raise PipelineError("Inference output exceeds its storage budget.")
-
-
-def _stop(process):
-    # The worker owns the new process group, including decoder/model children.
     try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    process.wait()
+        workspace_budget(path, limit)
+    except ResidentError as exc:
+        raise PipelineError(str(exc)) from None
 
 
-def run_inference(video, sidecar, destination, settings):
-    """Run an operator-configured local CLI, never a shell or remote transport."""
-    if not settings.inference_command:
-        raise PipelineError("Real inference is not configured; the original capture has been retained.")
+def _verified_media(sidecar, settings):
     metadata = read_json_file(sidecar, max_bytes=settings.limits.max_metadata_bytes)
     media = metadata.get("media")
     if media is None:
         raise PipelineError("Capture has no verified media timestamp mapping; inference cannot bind source evidence.")
     validate_media_mapping(media, len(metadata.get("frames", media["presentation_time_us"])))
+
+
+def run_inference(video, sidecar, destination, settings, *, pass_fds=()):
+    """Run an operator-configured local CLI, never a shell or remote transport."""
+    if not settings.inference_command:
+        raise PipelineError("Real inference is not configured; the original capture has been retained.")
+    _verified_media(sidecar, settings)
     args = [*settings.inference_command, "--video", str(video.resolve()), "--sidecar", str(sidecar.resolve()),
             "--output", str(destination.resolve()), "--pts-offset-ns", "0"]
     if settings.allow_estimated_intrinsics:
         args.append("--allow-estimated-intrinsics")
     if settings.allow_unverified_pinhole:
         args.append("--allow-unverified-pinhole")
-    environment = {key: value for key, value in os.environ.items() if key != "PROCESSING_TOKEN"}
-    root = str(Path(__file__).resolve().parent.parent)
-    environment["PYTHONPATH"] = os.pathsep.join(filter(None, (root, environment.get("PYTHONPATH"))))
+    environment = child_environment()
     started = time.monotonic()
     # DEVNULL prevents a faulty decoder from filling memory/disk with logs.
-    with subprocess.Popen(args, cwd=settings.inference_cwd, env=environment, start_new_session=True,
-                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as process:
-        try:
-            while process.poll() is None:
-                _workspace_budget(destination, settings.inference_workspace_bytes)
-                if time.monotonic() - started > settings.inference_timeout_seconds:
-                    raise PipelineError("Inference exceeded its processing deadline; retain the capture and retry after investigation.")
-                time.sleep(.05)
+    # Do not use Popen's context manager: __exit__ waits without a deadline if
+    # kill/reap fails. Preserve that safety failure instead of hanging shutdown.
+    process = subprocess.Popen(args, cwd=settings.inference_cwd, env=environment, start_new_session=True,
+                               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               pass_fds=pass_fds)
+    try:
+        while process.poll() is None:
             _workspace_budget(destination, settings.inference_workspace_bytes)
-            if process.returncode:
-                raise PipelineError("Inference failed; the original capture has been retained.")
-        finally:
-            _stop(process)
+            if time.monotonic() - started > settings.inference_timeout_seconds:
+                raise PipelineError("Inference exceeded its processing deadline; retain the capture and retry after investigation.")
+            time.sleep(.05)
+        _workspace_budget(destination, settings.inference_workspace_bytes)
+        if process.returncode:
+            raise PipelineError("Inference failed; the original capture has been retained.")
+    finally:
+        try:
+            stop_process(process)
+        except ResidentCleanupError:
+            raise PipelineCleanupError() from None
 
 
 def _unavailable(test_type):
@@ -136,11 +130,16 @@ def _observations(replay, output, test_type, sidecar, limits):
 class Pipeline:
     """The service's single worker owns invocation, result identity and cleanup."""
 
-    def __init__(self, settings, microscope=None):
+    def __init__(self, settings, microscope=None, resident=None, store=None):
         self.settings = settings
         self.microscope = microscope
+        self.resident = resident
+        self.store = store
+        self.cleanup_failed = False
 
     def __call__(self, inputs, output, capture, job, stage):
+        if self.cleanup_failed:
+            raise PipelineCleanupError()
         started = time.monotonic()
         stage("preparing_recording")
         sources = {take["take_id"]: (take, read_json_file(inputs / "files" / take["frame_metadata"]["member"],
@@ -149,14 +148,24 @@ class Pipeline:
         result_id, settings_id = str(uuid4()), str(uuid4())
         native = output / "native.tmp"
         replay_take = capture.get("replay_take_id")
+        resident_pid = None
+        cleanup_safe = True
         try:
             if replay_take:
                 take, _sidecar = sources[replay_take]
                 if take["kind"] != "full_body":
                     raise PipelineError("Replay requires a full-body source take.")
                 stage("estimating_movement")
-                run_inference(inputs / "files" / take["video"]["member"],
-                              inputs / "files" / take["frame_metadata"]["member"], native, self.settings)
+                video = inputs / "files" / take["video"]["member"]
+                sidecar = inputs / "files" / take["frame_metadata"]["member"]
+                if self.settings.resident_command:
+                    _verified_media(sidecar, self.settings)
+                    if self.resident is None:
+                        raise PipelineError("Resident inference is not ready; retry shortly.")
+                    resident_pid = self.resident.run(job["job_id"], video, sidecar, native)
+                else:
+                    lease = {"pass_fds": self.store.worker_fds()} if self.store is not None else {}
+                    run_inference(video, sidecar, native, self.settings, **lease)
             stage("analysing_test")
             microscopes = self._microscopes(inputs, output, sources)
             stage("preparing_replay")
@@ -190,8 +199,23 @@ class Pipeline:
             if replay is not None:
                 result["replay"] = {"source_take_id": replay_take, "manifest_artifact_id": artifacts[0]["artifact_id"]}
             return result
+        except Exception as exc:
+            cleanup_failed = isinstance(exc, (ResidentCleanupError, PipelineCleanupError))
+            try:
+                if not cleanup_failed and resident_pid is not None:
+                    self.resident.invalidate(resident_pid)
+            except ResidentCleanupError:
+                cleanup_failed = True
+            if cleanup_failed:
+                cleanup_safe = False
+                self.cleanup_failed = True
+                raise PipelineCleanupError() from None
+            if isinstance(exc, ResidentError):
+                raise PipelineError(str(exc)) from None
+            raise
         finally:
-            shutil.rmtree(native, ignore_errors=True)
+            if cleanup_safe:
+                shutil.rmtree(native, ignore_errors=True)
 
     def _microscopes(self, inputs, output, sources):
         if self.microscope is None:

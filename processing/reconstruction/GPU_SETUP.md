@@ -519,3 +519,185 @@ arbitrary participant recordings. Two-second network ingestion and a persistent
 service lifecycle still need integration by the service/Quest owners. The GPU
 experiment produces native arrays, source-linked annotations and an MP4; it does
 not establish full Quest end-to-end behavior or clinical validity.
+
+## Persistent service worker
+
+`PROCESSING_RESIDENT_COMMAND` selects one long-lived local GPU child. The service
+starts it before accepting new work. The child loads all five models, completes a
+full inference on an operator-approved warmup video, removes the warmup output,
+and only then reports ready. Original warmup media stays unchanged. Each accepted
+take gets fresh tracking and camera-motion state; model weights stay resident.
+
+This integrates model lifetime into the completed-upload service. It does not
+add streaming upload or promote the public-fixture experiment's 640px/15Hz input
+selection. Production retains its existing source dimensions, 30Hz inference map,
+calibration rules and native export contract. Resident ViTPose and HMR2 forwards
+use FP16 with batches of eight. Detector, GVHMR, body export and camera motion stay
+FP32. The half-second experiment's latency is not a production-service measurement.
+
+The legacy `PROCESSING_INFERENCE_COMMAND` remains an explicit cold-process mode.
+It cannot be configured alongside the resident command. A failed resident worker
+never falls back to that mode. Warm readiness is available through authenticated
+`GET /v1/ready`. New work is rejected with retryable `NOT_READY` while warming or
+unavailable; existing jobs and artifacts remain readable. Idempotent resubmission
+still resolves the original accepted job. The existing one-job capacity limit
+remains, rather than an unbounded queue.
+
+A failed or dead child loses readiness immediately when detected. The supervisor
+stops its process group and allows one fresh recovery attempt, including a complete
+warmup. The interrupted job stays failed; recovery only restores readiness for
+new submissions. Another failure leaves the worker unavailable until the service
+restarts. Startup, inference and scratch usage are bounded. Readiness is a model-lifecycle
+check, not a latency guarantee, a GPU capacity reservation or clinical validation.
+
+The built-in pipeline's direct child inherits the service's exclusive storage
+lock in both resident and legacy cold modes. If the service
+crashes but its child survives, a replacement service cannot recover or delete
+that child's files. Stop the old process group or container first. After the lock
+is released, the next service start removes abandoned warmup scratch before
+warming. Stop all older service and model processes before upgrading; older
+versions did not pass this lock to their children.
+
+Storage admission keeps a full warmup workspace in reserve and budgets native
+scratch separately from published output. Startup and recovery check available
+disk space and the total storage limit before launching. These conservative
+reservations can reject work before the disk is full. If kill, reap or cleanup
+cannot be confirmed, the service retains temporary output, rejects new work and
+requires operator intervention. It does not report recovery or delete files that
+a surviving child could still be writing.
+
+### Separate model and service environments
+
+The model image uses Python 3.10 and the tested Torch/CUDA dependencies. The service
+requires Python 3.11 or later. `Dockerfile.service` adds a separate locked Python
+3.11.10 environment without upgrading the model stack. First build or retain
+`physio-gvhmr:ee960bb` as described above. Build the service image from a minimal
+context so recordings, checkpoints and credentials cannot enter it:
+
+```sh
+CONTEXT=$(mktemp -d)
+cp pyproject.toml uv.lock processing/reconstruction/Dockerfile.service "$CONTEXT/"
+sudo docker build --progress=plain --platform linux/amd64 \
+  -f "$CONTEXT/Dockerfile.service" -t physio-service-resident:local "$CONTEXT"
+rm -r "$CONTEXT"
+```
+
+The image runs the service with `/opt/physio-service-venv/bin/python`. Configure its
+model child with `/opt/conda/bin/python`, not the service interpreter. Source stays
+in readonly mounts at `/app/processing` and `/app/docs`; approved checkpoints remain
+at `/opt/GVHMR/inputs/checkpoints`. Both processes must see the same absolute private
+data paths. The supervisor owns a direct child process, not a detached container
+or an SSH command. Do not configure `docker run`, `docker exec` or SSH as the
+resident command and assume killing that client also stopped GPU inference.
+
+Example environment inside that image, with separately mounted input and data
+folders:
+
+```sh
+PROCESSING_DATA_DIR=/data
+PROCESSING_INFERENCE_CWD=/opt/GVHMR
+PROCESSING_RESIDENT_COMMAND='["/opt/conda/bin/python","-u","-m","processing.reconstruction.resident","--warmup-video","/warmup/take.mp4","--warmup-sidecar","/warmup/take.json"]'
+```
+
+Supply `PROCESSING_TOKEN` separately, never in source or an image layer. The warmup
+must be a suitable full-body video with a valid explicit media timestamp mapping,
+local approved assets and the same deliberate calibration policy as real requests.
+Do not use a synthetic blank video to bypass tracking or camera-motion checks.
+Both calibration approximation flags still default false.
+
+Use a bounded container with a readonly root, nonroot execution, dropped
+capabilities, private writable data/cache mounts and the existing GPU runtime.
+Only an authorized operator should enable a persistent deployment or change its
+network exposure. Keep the service on loopback unless TLS is configured. The
+service entrypoint still requires TLS for non-loopback listeners. No new public
+endpoint or Quest deployment follows merely from building this image.
+
+### Persistent service verification, 2026-09-27
+
+The Arch RTX 3070 ran the dual-environment image successfully. Service image ID:
+`sha256:bb9ad2d95b560db097cb64dbdaa62058269ac936933230389bd34e5c24e4d4fa`.
+The base model image and its Python 3.10.14/Torch 2.3.0+cu121 stack remain unchanged.
+The locked service environment uses Python 3.11.10, PyAV 16.1.0 and NumPy 2.4.6.
+Model-side PyAV remains 13.0.0 and NumPy remains 1.23.5.
+
+The fixture is the unchanged public 242-frame, 1920x1080 WHAM derivative identified
+above. A new strict sidecar binds actual decoded media timestamps and labels
+unknown distortion honestly. The proof explicitly permits unverified pinhole
+geometry. These are fixture labels and estimated intrinsics, not Quest calibration.
+
+Two isolated full HTTP runs completed. The final run used a network-disabled,
+nonroot, readonly-root container with separate readonly source/input/asset mounts,
+24 GiB host-memory limit, eight CPUs and a 20-minute outer deadline. It started real
+Uvicorn on container loopback and used the default service pipeline, not a mocked
+inference boundary. No host port or persistent deployment was opened.
+
+The final driver invocation inside that container was:
+
+```sh
+timeout --kill-after=30s 20m \
+  /opt/physio-service-venv/bin/python /tools/service_smoke_04.py
+```
+
+Evidence and the driver remain outside Git under
+`/home/bader/physio-reconstruction/warmed-service-01/`. The final receipt is
+`output/service-04/proof.json`; source snapshot is `code-04`; the driver is
+`tools/service_smoke_04.py`. Its source archive SHA-256 is
+`eb00f098f5cee3afcdc0be315f8417610bbdd65677ba2701b474df20024fab83`.
+Later source changes extend the same inherited lease to the legacy cold path;
+real OS subprocess tests verify that change. No model or resident-controller code
+changed after this final GPU snapshot.
+
+Verified behavior:
+
+- Unauthenticated readiness returned 401. Initial readiness and new-job admission
+  returned 503 until full warmup completed after 45.465 seconds.
+- Two distinct HTTP jobs completed in the same child. All five constructor counts
+  stayed at one; use counts advanced from two to three, including warmup.
+- A third accepted job reached real child preparation before forced SIGKILL. The
+  job failed, original input hashes stayed unchanged, and no partial artifacts
+  were published. Idempotent retries still resolved their existing jobs.
+- Recovery used one new PID and full warmup, taking 45.092 seconds from the recovery
+  polling start. New work stayed rejected during warmup. A subsequent job succeeded.
+- Killing that replacement child left readiness false with no further restart.
+  Shutdown stopped the HTTP thread and left no resident children.
+- All six published artifacts per successful job passed HTTP byte/hash checks.
+  Replay retained 242 source-linked frames and 22 joints. Six source/body/joint
+  frames were visually inspected in two model views, without claiming camera or
+  Quest registration, anatomical accuracy or clinical validation.
+
+The three successful warmed HTTP jobs took 35.661, 35.412 and 35.380 seconds from
+submission to persisted success. That includes upload, preparation, inference,
+the microscope attempt and publication; it excludes Quest loading/display and
+later artifact downloads. Median native runtime was 29.691 seconds. This is the
+existing full-resolution completed-upload path, **not** the 640px/15Hz streaming
+experiment or its half-second after-capture wait.
+
+Peak Torch allocation was 3.259 GiB; peak reservation was 4.627 GiB in each job.
+These are allocator measurements, not total device VRAM. A separate matched cold
+FP32/batch-two control took 57.864 seconds in the native runtime. The resident
+configuration also changes pose/features to FP16/batch-eight, so that comparison
+does not isolate savings from model retention alone.
+
+Numerical equivalence is not claimed. Against the cold control, the two warmed
+jobs had median root-relative joint differences of 1.49 and 1.27 millimetres in
+model scale, with maxima of 12.23 and 20.58 millimetres. Raw global-joint maxima
+were 117.62 and 163.77 millimetres. The comparison also includes unisolated
+camera-motion/model variation; it is not a precision-only or ground-truth error
+measurement. Inputs, calibration, selected source indices and asset identities
+matched. Body alignment and world/root motion still need task-specific validation.
+
+Local verification uses the locked project environment:
+
+```sh
+.venv/bin/python -m pytest --cov=processing --cov-branch --cov-report=term-missing -q
+.venv/bin/ruff check processing tests
+.venv/bin/python -m processing.contracts validate tests/contracts/fixtures
+git diff --check
+```
+
+The full suite passed 485 tests and 270 subtests, with one real-CUDA check skipped
+on the Mac. The model-image run separately passed all nine resident-model tests,
+including actual FP16 CUDA weights, FP32 boundaries and batch tails, without skips.
+Synthetic subprocess tests cover live orphan lock exclusion, first safe restart,
+low storage, recovery overlap, malformed protocol, failed kill/reap/cleanup,
+retained evidence and bounded shutdown. Unit coverage is not GPU-model coverage.

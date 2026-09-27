@@ -3,6 +3,7 @@
 import gc
 import importlib.metadata
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 from .native import UPSTREAM_COMMIT, prepare
@@ -15,6 +16,30 @@ ASSETS = (
     'vitpose/vitpose-h-multi-coco.pth',
     'yolo/yolov8x.pt',
 )
+
+
+def asset_identities(*, include_auxiliary=False):
+    """Hash only operator-trusted assets in the installed, pinned model tree."""
+    from hmr4d import PROJ_ROOT
+
+    if (Path(PROJ_ROOT) / 'INSPECTED_REVISION').read_text().strip() != UPSTREAM_COMMIT:
+        raise ValueError('runtime source revision does not match this adapter')
+    if Path.cwd().resolve() != Path(PROJ_ROOT).resolve():
+        raise ValueError('run from the installed GVHMR root for upstream relative asset paths')
+    paths = {name: 'inputs/checkpoints/' + name for name in ASSETS}
+    if include_auxiliary:
+        for name in ('hmr4d/network/hmr2/configs/smpl_mean_params.npz',
+                     'hmr4d/utils/body_model/smplx2smpl_sparse.pt',
+                     'hmr4d/utils/body_model/smpl_coco17_J_regressor.pt',
+                     'hmr4d/utils/body_model/smplx_verts437.pt'):
+            paths[name] = name
+    assets = {}
+    for name, relative in paths.items():
+        path = Path(PROJ_ROOT) / relative
+        if not path.is_file() or path.stat().st_size == 0:
+            raise ValueError(f'missing operator-provided asset: {name}')
+        assets[name] = digest(path)
+    return assets
 
 
 def load_demo_model():
@@ -64,10 +89,16 @@ class CameraMotionSolver:
         return transform
 
 
-def infer_native(video, plan, output):
+def extract_batches(extract, crops, crop_boxes, batch_size):
+    import torch
+
+    return torch.cat([extract(crops[i:i+batch_size], crop_boxes[i:i+batch_size])
+                      for i in range(0, len(crops), batch_size)])
+
+
+def infer_native(video, plan, output, *, resident_models=None, batch_size=2):
     import numpy as np
     import torch
-    from hmr4d import PROJ_ROOT
     from hmr4d.utils.geo.hmr_cam import get_bbx_xys_from_xyxy
     from hmr4d.utils.geo_transform import compute_cam_angvel
     from hmr4d.utils.preproc import Extractor, SimpleVO, Tracker, VitPoseExtractor
@@ -81,16 +112,9 @@ def infer_native(video, plan, output):
     from hmr4d.utils.video_io_utils import read_video_np
     from smplx.joint_names import JOINT_NAMES
 
-    if (Path(PROJ_ROOT) / 'INSPECTED_REVISION').read_text().strip() != UPSTREAM_COMMIT:
-        raise ValueError('runtime source revision does not match this adapter')
-    if Path.cwd().resolve() != Path(PROJ_ROOT).resolve():
-        raise ValueError('run from the installed GVHMR root for upstream relative asset paths')
-    assets = {}
-    for name in ASSETS:
-        path = Path(PROJ_ROOT) / 'inputs/checkpoints' / name
-        if not path.is_file() or path.stat().st_size == 0:
-            raise ValueError(f'missing operator-provided asset: {name}')
-        assets[name] = digest(path)
+    if type(batch_size) is not int or batch_size != (8 if resident_models is not None else 2):
+        raise ValueError('resident batches must be 8; cold batches remain 2')
+    assets = asset_identities() if resident_models is None else dict(resident_models.assets)
     if not torch.cuda.is_available():
         raise RuntimeError('CUDA GPU unavailable')
     torch.cuda.reset_peak_memory_stats()
@@ -101,8 +125,12 @@ def infer_native(video, plan, output):
         stages[name] = time.monotonic() - start
 
     def release():
-        gc.collect()
-        torch.cuda.empty_cache()
+        if resident_models is None:
+            gc.collect()
+            torch.cuda.empty_cache()
+
+    def model_for(name, factory):
+        return factory() if resident_models is None else resident_models.use(name)
 
     def checked(tensor, shape, label):
         if tuple(tensor.shape) != tuple(shape) or not torch.isfinite(tensor).all():
@@ -110,9 +138,12 @@ def infer_native(video, plan, output):
         return tensor
 
     count = len(plan['selected_indices'])
-    with torch.inference_mode():
+    # FP16 is confined to the resident pose/feature neural wrappers. In particular,
+    # flip averaging, heatmap decoding, VO, GVHMR and body fitting remain FP32.
+    precision = nullcontext() if resident_models is None else torch.autocast('cuda', enabled=False)
+    with torch.inference_mode(), precision:
         started = time.monotonic()
-        tracker = Tracker()
+        tracker = model_for('detector', Tracker)
         history = tracker.track(str(video))
         boxes = select_track(history)
         if len(boxes) != count:
@@ -123,20 +154,19 @@ def infer_native(video, plan, output):
         release()
         mark('tracking_s', started)
 
-        # Upstream extractor batches are 16 and ViTPose doubles them for flip tests.
-        # Feed two crops at a time without modifying upstream source.
+        # ViTPose doubles each batch for flip tests. Cold retains its batch of 2;
+        # resident uses 8 plus the actual tail, without changing selected images.
         started = time.monotonic()
         crops, crop_boxes = get_batch(str(video), bbx)
-        pose = VitPoseExtractor()
-        kp2d = torch.cat([pose.extract(crops[i:i+2], crop_boxes[i:i+2]) for i in range(0, count, 2)])
+        pose = model_for('pose', VitPoseExtractor)
+        kp2d = extract_batches(pose.extract, crops, crop_boxes, batch_size)
         checked(kp2d, (count, 17, 3), 'ViTPose output')
         del pose
         release()
         mark('vitpose_s', started)
         started = time.monotonic()
-        extractor = Extractor()
-        features = torch.cat([extractor.extract_video_features(crops[i:i+2], crop_boxes[i:i+2])
-                              for i in range(0, count, 2)])
+        extractor = model_for('features', Extractor)
+        features = extract_batches(extractor.extract_video_features, crops, crop_boxes, batch_size)
         checked(features, (count, 1024), 'HMR2 features')
         del extractor, crops, crop_boxes
         release()
@@ -167,7 +197,7 @@ def infer_native(video, plan, output):
         mark('camera_motion_s', started)
 
         started = time.monotonic()
-        model = load_demo_model()
+        model = model_for('gvhmr', load_demo_model)
         data = {'length': torch.tensor(count), 'bbx_xys': bbx, 'kp2d': kp2d,
                 'K_fullimg': K.repeat(count, 1, 1), 'cam_angvel': compute_cam_angvel(rotations),
                 'f_imgseq': features}
@@ -190,7 +220,7 @@ def infer_native(video, plan, output):
         mark('gvhmr_s', started)
 
         started = time.monotonic()
-        body = make_smplx('supermotion').cuda().eval()
+        body = model_for('body', lambda: make_smplx('supermotion').cuda().eval())
         faces = np.asarray(body.faces)
         vertices = int(body.bm.v_template.shape[0])
         if faces.ndim != 2 or faces.shape[1] != 3 or not np.issubdtype(faces.dtype, np.integer):
