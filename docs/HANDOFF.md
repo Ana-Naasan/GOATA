@@ -1,15 +1,125 @@
 # Codex session handoff
 
-**Last updated:** September 27, 2026. Quest **0.3.3 / Android code 10** is
-built, installed wirelessly and launched with automatic private-service
-connection. It adds local descriptive ELK/RTK/Walking patterns and reruns from
-saved replay geometry; all **423** current saved app files survived unchanged.
+**Last updated:** September 27, 2026. Quest **0.3.6 / Android code 13** is
+built, installed over USB and launched with an authenticated private-service
+connection. All **423** saved app files survived unchanged. It includes the
+approved replay UI fixes, plain-language conclusions and deterministic Goata
+Score. Scrollable conclusions are being packaged in 0.3.7 / Android code 14.
 Source is on `codex/hci-quest-ui` in
-`/Users/baderasadi/.codex/worktrees/hci-quest-ui/HTH`, based on `main` at `1a9f9e3`.
-A fresh Walking service job completed and its actual saved reconstruction passed
-local classification/source-binding checks. Evaluated exercise correctness,
-clinical gait classification and wearer acceptance of the new rerun UI remain
-incomplete. Historical release evidence is retained below.
+`/Users/baderasadi/.codex/worktrees/hci-quest-ui/HTH`.
+The saved Walking reconstruction passed local scoring/source-binding checks.
+Full wearer acceptance and evaluated exercise correctness remain incomplete.
+Historical release evidence is retained below.
+
+## Concise recording-specific summaries (0.3.4)
+
+On `codex/hci-quest-ui`, the review now leads with measured conclusions: knee
+peaks with their separate source moments and displayed difference, signed ELK
+lean bounds, RTK shoulder–pelvis offset bounds, and Walking torso inclination
+bounds. Source samples, validity rules and peak evidence are unchanged. Details
+retain the method, sample count and source span, explicitly excluding gaps.
+The selected conclusion is visible in the main review; long historical
+explanations are bounded there and remain complete in Details.
+
+Focused checks only, as requested for the deadline:
+`/Users/baderasadi/Library/Caches/HTH/dotnet/dotnet run --project
+quest/Checks/PatternChecks.csproj --no-restore` passed **81 checks** after the new
+conclusion assertion first failed against the old implementation.
+The equivalent `UIEvidenceChecks.csproj` command passed **35 checks**.
+The private saved Walking proof reran deterministically except observation IDs
+and verified source frame/time bindings; participant values remain outside Git.
+ELK/RTK used synthetic sanity checks only. General and C# reviews found no
+remaining blocker after bounding historical summary text.
+
+Unity 6000.0.66f2 built **0.3.4 / Android code 11** successfully, exiting 0;
+log: `/tmp/physio-hci-ui-034-build-final.log`. `aapt` confirmed the APK version
+and `apksigner verify --verbose` passed (v2 signature).
+APK: `quest/Builds/PhysioFixture.apk`, **86,362,594 bytes**, SHA-256
+`e75ed59b2808681d7c0c8d73f4863af61cd3ad70e5b04ba75f8251b507a7732d`.
+Generated scene-ID and TMP serialization churn was restored; the runtime source
+contains the UI changes. Installation, wearer acceptance and clinical assessment
+validation are not established by these checks.
+
+## Approved video-audit fixes (0.3.5)
+
+The user approved five changes after four parallel frame reviews of the supplied
+Physio recording: plain-language insights, bounded button text, readable timeline,
+initial HUD/body separation and less obstructive manipulation handles.
+
+- Deterministic summaries lead with ordinary language; angles, source times and
+  complete method/limitations remain available. Existing sample validity and
+  source mappings are unchanged; this adds no trained assessment model.
+- Replay controls use four buttons per row, shorter labels, supported text,
+  current/total time, a contrasting slider and compact optional rows.
+- The initial HUD goes opposite the body relative to the head and faces the
+  wearer; Reset body also repositions it. The panel remains independently movable.
+- Grip meshes are smaller while original grab/ray colliders and Meta hover/select
+  feedback remain. Grips remain discoverable rather than disappearing entirely.
+- The recorded red/purple wireframes have no confirmed app source. No system
+  boundary setting was changed.
+
+Focused verification: 81 pattern checks, 35 UI evidence checks, real saved Walking
+reconstruction proof with deterministic conclusions/source binding, and quick C#
+reviews passed. ELK/RTK checks use synthetic geometry. This is not full headset E2E
+acceptance; opening Insights may still need panel-position adjustment and wearer
+confirmation. No participant recordings were changed or recovered.
+
+Unity built 0.3.5 / Android code 12 successfully; APK signing/version checks passed.
+SHA-256: `e3ddbe63b11fd494dc94fa2956c2b8150985049bbb915f1e168c794b82ead635`.
+Wireless installation initially failed because the Quest disconnected; USB installation
+then succeeded. All 423 saved files were unchanged. The app launched and reached
+the authenticated service. A headset screenshot confirmed the new replay HUD
+rendered with fitting labels and elapsed/total time. The scene builder regenerates
+the UI during FixtureBuild.Build.
+
+## Goata Score demo rules (0.3.6)
+
+The user requested a deterministic 0–100 Goata Score with equal category weights
+and explicit demo cutoffs. This adds no trained model or validated correctness
+assessment. Raw score is `100 - sum(severity * effective_weight)`.
+
+| Test | Two categories, base weight 50 each | Full-severity demo scales |
+|---|---|---|
+| Walking | Difference between left/right knee bending peaks; upper-body inclination | 20 degrees; 30 degrees |
+| ELK | Shoulder-to-hip twist; fore/aft torso tilt | 30 degrees each |
+| RTK | Sideways torso tilt; fore/aft torso tilt | 30 degrees each |
+
+Severity is the absolute measured angle divided by its scale, capped at one.
+ELK's intended side bend and RTK's intended twist are not scored as deductions.
+The two walking peaks retain their separate original evidence moments.
+
+At the user's request, missing categories are omitted and available positive
+weights are automatically renormalized to 100, without a blocking warning.
+Details list the actual contributing categories, effective weights, rules and
+source times. Zero available contributors yield no invented numeric score.
+The display rounds to the nearest integer, halves away from zero, then uses
+red 0–50, yellow 51–90 and green 91–100. A compact native UI dial accompanies
+plain-language summaries; no new graphics package or image assets are required.
+
+The gauge clears on navigation and original-evidence viewing, and requires the
+current patient/session/test/replay identity. Existing saved geometry is reused;
+no rerecording, recovery, upload, or original-result mutation is needed.
+
+Verification: 35 focused score checks include thresholds, invalid input,
+partial-data weighting, intended-movement exclusions, deterministic scoring of
+an actual saved Walking result and source binding. C# review passed. The review
+layout retains all cards and Details within the existing panel height. Unity
+build succeeded (`/tmp/physio-hci-ui-036-build.log`); ADB confirmed installed
+0.3.6 / code 13. All 423 saved files were unchanged, and the app reached the
+authenticated service at 09:55:39 EDT. Wearer acceptance remains required.
+
+## Scrollable conclusions (0.3.7)
+
+The user requested scrolling and a combined push with Goata Score. The existing
+text body now uses Unity's native ScrollRect, a masked raycastable viewport,
+preferred-height text and a vertical scrollbar. The score stays in a fixed
+sibling row. Text retains its normal font size; review summaries and Details
+share scrolling, and reopening a page resets to the top. No dependency added.
+C# review verified the generated hierarchy, serialized wiring and Meta pointer
+drag event support. The exact helper compiled against installed Unity/UI/TMP
+assemblies without warnings or errors. Focused checks passed: 35 score checks
+with saved Walking geometry and 35 evidence/presentation checks.
+Build/install are pending; physical scrolling acceptance remains unverified.
 
 ## UI redesign and wireless deployment
 

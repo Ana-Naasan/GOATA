@@ -18,9 +18,10 @@ namespace Physio.Viewer
             public JObject[] Items { get; }
             public string Detail { get; }
             public bool Completed { get; }
+            public GoataScoreResult? Score { get; }
 
-            public LocalPatternReview(ReplayData? replay, string condition, JObject[] items, string detail, bool completed)
-            { Replay = replay; Condition = condition; Items = items; Detail = detail; Completed = completed; }
+            public LocalPatternReview(ReplayData? replay, string condition, JObject[] items, string detail, bool completed, GoataScoreResult? score = null)
+            { Replay = replay; Condition = condition; Items = items; Detail = detail; Completed = completed; Score = score; }
         }
 
         private LocalPatternReview patternReview = UnavailablePatterns("No validated replay is loaded.");
@@ -81,7 +82,7 @@ namespace Physio.Viewer
                 var detail = items.Length == 0
                     ? "No supported patterns could be derived from the valid pose samples in this replay. Inspect original evidence and pose visibility."
                     : "Descriptive patterns estimated from the saved reconstructed pose. Clinical assessment remains unavailable.";
-                return new LocalPatternReview(replay, condition, items, detail, true);
+                return new LocalPatternReview(replay, condition, items, detail, true, GoataScore.Evaluate(replay, testType, condition));
             }
             catch (Exception exception)
             {

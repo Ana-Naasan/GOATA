@@ -22,8 +22,21 @@ namespace Physio.Viewer
 
         private void RenderReview()
         {
+            if (goataScoreGauge != null) goataScoreGauge.gameObject.SetActive(false);
             heading.text = result?.ResultId == session?.ResultId ? "Movement review · latest" : "Movement review · saved version";
             if (manifest == null) { body.text = "No validated result is loaded."; return; }
+            var scoreMatchesSelection = session != null && patient?.Id == session.PatientId && result != null &&
+                (string?)manifest["patient_id"] == session.PatientId.ToString() &&
+                (string?)manifest["session_id"] == session.Id.ToString() &&
+                (string?)manifest["test_type"] == session.TestType;
+            var hasCurrentScore = scoreMatchesSelection && !classifyingPatterns && patternReview.Completed &&
+                patternReview.Replay != null && result!.ReplayTakeId == patternReview.Replay.Timeline.SourceTakeId;
+            if (goataScoreGauge != null)
+            {
+                goataScoreGauge.SetScore(hasCurrentScore ? patternReview.Score?.Score : null,
+                    hasCurrentScore ? patternReview.Score?.Summary ?? "Not enough data" : "Not enough data");
+                goataScoreGauge.gameObject.SetActive(scoreMatchesSelection);
+            }
             var observations = patternReview.Items;
             if (observations.Length == 0)
                 observations = (manifest["observations"] as JArray)?.OfType<JObject>().ToArray() ?? Array.Empty<JObject>();
@@ -50,13 +63,26 @@ namespace Physio.Viewer
             if (showObservations && observations.Length > 0) RenderObservations(observations);
             else RenderAssessmentOrUnavailable(assessmentStatus, assessment);
             SetPatternRerunAction();
+            if (goataScoreGauge != null && goataScoreGauge.gameObject.activeSelf)
+            {
+                SetBodyHeight(showObservations && observations.Length > 0 ? 48 : 68);
+                body.overflowMode = TextOverflowModes.Overflow;
+                body.enableAutoSizing = false;
+                for (var index = 0; index < 3; index++)
+                {
+                    if (!rows[index].gameObject.activeSelf) continue;
+                    var layout = rows[index].GetComponent<LayoutElement>();
+                    layout.minHeight = layout.preferredHeight = showObservations && observations.Length > 0 ? 86 : 64;
+                }
+            }
+            ResetBodyScroll();
         }
 
         private void RenderObservations(JObject[] observations)
         {
             var visible = observations.Skip(page * 3).Take(3).ToArray();
             if (selectedObservation == null || !visible.Contains(selectedObservation)) selectedObservation = visible[0];
-            body.fontSize = 20; SetBodyHeight(120);
+            body.fontSize = 20; SetBodyHeight(160);
             body.text = InsightPresentation.Summary(selectedObservation, EvidenceView(selectedObservation));
             for (var index = 0; index < visible.Length; index++)
             {

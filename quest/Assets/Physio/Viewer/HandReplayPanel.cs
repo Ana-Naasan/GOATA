@@ -61,6 +61,7 @@ namespace Physio.Viewer
         private bool timelinePlaced;
         private bool timelineVisible;
         private bool speedChoicesOpen;
+        private bool hasEvidence;
         private UnityAction[] speedChoiceActions = System.Array.Empty<UnityAction>();
         private string replayContext = "";
 
@@ -100,7 +101,7 @@ namespace Physio.Viewer
             }
             speedChoicesOpen = false;
             if (speedChoicesRoot != null) speedChoicesRoot.SetActive(false);
-            ResizePanel(544f);
+            ResizeReplayPanel();
             if (resetReplayButton != null) resetReplayButton.onClick.AddListener(viewer.ResetReplayPlacement);
             if (bringPanelButton != null) bringPanelButton.onClick.AddListener(viewer.BringPanelToView);
             if (scaleDownButton != null) scaleDownButton.onClick.AddListener(viewer.ScaleReplayDown);
@@ -121,7 +122,9 @@ namespace Physio.Viewer
             if (visible && !timelinePlaced && head != null)
             {
                 var yaw = Quaternion.Euler(0, head.eulerAngles.y, 0);
-                timelineRoot.SetPositionAndRotation(head.position + yaw * new Vector3(1.2f, -.42f, 1.45f), yaw);
+                var position = viewer != null ? viewer.ReplayHudPosition(head) :
+                    head.position + yaw * new Vector3(-.7f, -.3f, 1.1f);
+                timelineRoot.SetPositionAndRotation(position, Quaternion.LookRotation(position - head.position, Vector3.up));
                 timelinePlaced = true;
             }
             RefreshTimelineVisibility();
@@ -149,6 +152,9 @@ namespace Physio.Viewer
 
         public void SelectEvidence(double start, double end, string region)
         {
+            hasEvidence = true;
+            if (evidenceLabel != null) evidenceLabel.gameObject.SetActive(true);
+            ResizeReplayPanel();
             if (evidenceLabel != null) evidenceLabel.text = $"{region} · source {start:0.00}" + (end == start ? "s · selected frame" : $"–{end:0.00}s");
             if (evidenceRange == null || seekSlider == null) return;
             var span = seekSlider.maxValue - seekSlider.minValue;
@@ -163,6 +169,9 @@ namespace Physio.Viewer
 
         public void ClearEvidence()
         {
+            hasEvidence = false;
+            if (evidenceLabel != null) evidenceLabel.gameObject.SetActive(false);
+            ResizeReplayPanel();
             if (evidenceLabel != null) evidenceLabel.text = "";
             if (evidenceRange != null) evidenceRange.gameObject.SetActive(false);
         }
@@ -174,14 +183,17 @@ namespace Physio.Viewer
             var inMoonRoom = viewer != null && viewer.GetComponent<ReplayEnvironment>()?.IsQuietRoom == true;
             var playMode = viewer?.GetComponent<ReplayPlayInteractions>();
             SetText(statusLabel, state.Status);
-            SetText(timeLabel, state.Time + (inMoonRoom ? " · STATIONARY VR" : ""));
+            var startTime = seekSlider != null ? seekSlider.minValue : 0f;
+            var endTime = seekSlider != null ? seekSlider.maxValue : 0f;
+            SetText(timeLabel, $"{FormatTime(state.SeekTime - startTime)} / {FormatTime(endTime - startTime)}" +
+                (inMoonRoom ? " · STATIONARY VR" : ""));
             SetText(playPauseLabel, state.PlayPause);
-            SetText(reverseLabel, state.Reverse);
-            SetText(speedLabel, "Speed " + state.Speed + (speedChoicesOpen ? " ▴" : " ▾"));
+            SetText(reverseLabel, state.Reverse == "Direction: reverse" ? "Reverse" : "Forward");
+            SetText(speedLabel, "Speed " + state.Speed);
             SetText(skeletonLabel, state.Skeleton);
             SetText(controlsLabel, controlsExpanded ? "Hide" : "Controls");
-            SetText(environmentLabel, inMoonRoom ? "Passthrough" : "Moon room");
-            SetText(playModeLabel, playMode?.IsPlayMode == true ? "Exit play" : "Play mode");
+            SetText(environmentLabel, inMoonRoom ? "Show room" : "Moon");
+            SetText(playModeLabel, playMode?.IsPlayMode == true ? "Stop play" : "Play mode");
 
             if (seekSlider != null)
             {
@@ -247,13 +259,21 @@ namespace Physio.Viewer
         {
             speedChoicesOpen = !speedChoicesOpen;
             if (speedChoicesRoot != null) speedChoicesRoot.SetActive(speedChoicesOpen);
-            ResizePanel(speedChoicesOpen ? 624f : 544f);
+            ResizeReplayPanel();
         }
 
         private void ChooseSpeed(int index)
         {
             viewer?.SetPlaybackSpeed(index);
             if (speedChoicesOpen) ToggleSpeedChoices();
+        }
+
+        private void ResizeReplayPanel() => ResizePanel(464f + (speedChoicesOpen ? 76f : 0f) + (hasEvidence ? 40f : 0f));
+
+        private static string FormatTime(float value)
+        {
+            var seconds = Mathf.Max(0, Mathf.FloorToInt(value));
+            return $"{seconds / 60:00}:{seconds % 60:00}";
         }
 
         private void SetControlsExpanded(bool expanded)

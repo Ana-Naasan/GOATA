@@ -29,7 +29,9 @@ namespace Physio.Viewer
         [SerializeField] private TMP_Text heading = null!;
         [SerializeField] private TMP_Text context = null!;
         [SerializeField] private TMP_Text body = null!;
+        [SerializeField] private ScrollRect? bodyScroll;
         [SerializeField] private TMP_Text status = null!;
+        [SerializeField] private GoataScoreGauge? goataScoreGauge;
         [SerializeField] private Button back = null!;
         [SerializeField] private Button options = null!;
         [SerializeField] private Button primary = null!;
@@ -211,6 +213,14 @@ namespace Physio.Viewer
             previewRoot.SetActive(false);
             amplifiedPreview.transform.parent.gameObject.SetActive(false);
             reviewTabs.SetActive(next == Screen.Review);
+            workspaceBackplate.GetComponent<VerticalLayoutGroup>().spacing = next == Screen.Review ? 6f : 12f;
+            var bodyContainer = bodyScroll != null ? bodyScroll.transform.parent : body.transform.parent;
+            bodyContainer.GetComponent<VerticalLayoutGroup>().spacing = next == Screen.Review ? 6f : 12f;
+            if (goataScoreGauge != null)
+            {
+                goataScoreGauge.SetScore(null, "Not enough data");
+                goataScoreGauge.gameObject.SetActive(false);
+            }
             listPager.SetActive(false);
             var panelHeight = next == Screen.CaptureSetup || next == Screen.Review || next == Screen.Finding || next == Screen.Feature ||
                 next == Screen.Foot || next == Screen.Microscope ? 940f : 800f;
@@ -224,6 +234,8 @@ namespace Physio.Viewer
                 var label = row.GetComponentsInChildren<TMP_Text>(true).First(t => t.name == "Label"); label.fontSize = 24; label.color = Color.white;
             }
             body.fontSize = 24;
+            body.enableAutoSizing = false;
+            body.overflowMode = TextOverflowModes.Overflow;
             SetAction(primary, "", null); SetAction(secondary, "", null);
             body.text = "";
             SetBodyHeight(next == Screen.Review ? 56 : next == Screen.Finding || next == Screen.Feature ? 300 :
@@ -255,6 +267,7 @@ namespace Physio.Viewer
                     body.text = "AUTHORED SYNTHETIC DEMO\nUse the handles to move and resize. This body is not a participant or assessment.";
                     break;
             }
+            ResetBodyScroll();
         }
 
         private void RenderPatients()
@@ -517,6 +530,7 @@ namespace Physio.Viewer
                 else { viewer.Highlight(Array.Empty<string>()); viewer.SetReplayVisible(false); }
                 GetComponent<HandReplayPanel>().ShowTimeline(same);
                 reviewTabs.SetActive(false);
+                if (goataScoreGauge != null) goataScoreGauge.gameObject.SetActive(false);
                 previewRoot.SetActive(true);
                 foreach (var row in rows) row.gameObject.SetActive(false);
                 SetBodyHeight(56);
@@ -680,7 +694,18 @@ namespace Physio.Viewer
         }
 
         private void SetBodyHeight(float height)
-        { var layout = body.GetComponent<LayoutElement>(); layout.minHeight = layout.preferredHeight = height; }
+        {
+            var layout = bodyScroll != null ? bodyScroll.GetComponent<LayoutElement>() : body.GetComponent<LayoutElement>();
+            layout.minHeight = layout.preferredHeight = height;
+        }
+
+        private void ResetBodyScroll()
+        {
+            if (bodyScroll == null) return;
+            LayoutRebuilder.ForceRebuildLayoutImmediate(workspaceBackplate);
+            bodyScroll.StopMovement();
+            bodyScroll.verticalNormalizedPosition = 1f;
+        }
 
         private void SetRow(int index, string label, Action action) => SetAction(rows[index], label, action);
         private readonly Dictionary<Button, (TMP_Text Label, Action? Action)> buttonActions = new();

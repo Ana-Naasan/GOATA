@@ -282,6 +282,7 @@ namespace Physio.Viewer
             if (!hasInputFocus || replayDisplayRoot == null) return;
             replayDisplayRoot.SetPositionAndRotation(initialRootPose.position, initialRootPose.rotation);
             replayDisplayRoot.localScale = initialRootScale;
+            replayPanel?.BringTimelineToView();
             LogAction("reset_replay_placement");
         }
 
@@ -604,6 +605,16 @@ namespace Physio.Viewer
             replayDisplayRoot.localScale = Vector3.one * target;
             MaintainGroundedReplay();
             LogAction($"scale_replay_{target:0.###}");
+        }
+
+        public Vector3 ReplayHudPosition(Transform head)
+        {
+            var yaw = Quaternion.Euler(0f, head.eulerAngles.y, 0f);
+            var bodyToRight = replayDisplayRoot == null ||
+                Vector3.Dot(replayDisplayRoot.position - head.position, yaw * Vector3.right) >= 0f;
+            // Keep the initial controls on the opposite side of the view from the body.
+            // This is only placement; the panel remains independently grabbable afterward.
+            return head.position + yaw * new Vector3(bodyToRight ? -.7f : .7f, -.3f, 1.1f);
         }
 
         private void PositionPanel()

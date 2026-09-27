@@ -159,8 +159,22 @@ public static class HandReviewSceneBuilder
         var grab = display.GetComponent<Grabbable>();
         AddRayGrabInteraction(leftHandle, leftHandle.GetComponent<Collider>(), grab);
         AddRayGrabInteraction(rightHandle, rightHandle.GetComponent<Collider>(), grab);
-        AddGrabFeedback(display.gameObject, leftHandle.GetComponent<Renderer>(), rightHandle.GetComponent<Renderer>());
+        AddGrabFeedback(display.gameObject, CompactGripVisual(leftHandle), CompactGripVisual(rightHandle));
         return display;
+    }
+
+    private static Renderer CompactGripVisual(GameObject handle)
+    {
+        // Preserve the generous native grab/ray collider while reducing visual obstruction.
+        var original = handle.GetComponent<Renderer>();
+        var visual = new GameObject("Compact grip visual", typeof(MeshFilter), typeof(MeshRenderer));
+        visual.transform.SetParent(handle.transform, false);
+        visual.transform.localScale = new Vector3(.45f, .28f, .45f);
+        visual.GetComponent<MeshFilter>().sharedMesh = handle.GetComponent<MeshFilter>().sharedMesh;
+        var renderer = visual.GetComponent<Renderer>();
+        renderer.sharedMaterial = original.sharedMaterial;
+        original.enabled = false;
+        return renderer;
     }
 
     private static HandReplayPanel CreatePanel(OVRCameraRig rig, Material material, FixtureViewer viewer)
@@ -196,7 +210,14 @@ public static class HandReviewSceneBuilder
         var previousObservations = CreateButton(reviewTabs, "Previous");
         var nextObservations = CreateButton(reviewTabs, "Next");
         reviewTabs.gameObject.SetActive(false);
-        var body = CreateText(content.transform, "Page detail", "", 24f, 150f);
+        var scoreRoot = new GameObject("GoataScore", typeof(RectTransform), typeof(LayoutElement), typeof(GoataScoreGauge));
+        scoreRoot.transform.SetParent(content.transform, false);
+        SetLayout(scoreRoot, 112f);
+        var scoreGauge = scoreRoot.GetComponent<GoataScoreGauge>();
+        var scoreFont = LoadRequired<GameObject>(ButtonPath).GetComponentsInChildren<TMP_Text>(true).First();
+        scoreGauge.Configure(scoreFont.font, scoreFont.fontSharedMaterial);
+        scoreRoot.SetActive(false);
+        var body = CreateScrollableBody(content.transform, out var bodyScroll);
         body.overflowMode = TextOverflowModes.Overflow;
         var previews = new GameObject("Evidence previews", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(LayoutElement));
         previews.transform.SetParent(content.transform, false);
@@ -222,13 +243,16 @@ public static class HandReviewSceneBuilder
         var nextPage = CreateButton(listPager, "Next");
         listPager.gameObject.SetActive(false);
 
-        var replayRoot = CreateSurface("Replay object controls", rig, 620f, 544f, out var replayContent);
+        var replayRoot = CreateSurface("Replay object controls", rig, 620f, 464f, out var replayContent);
+        replayContent.GetComponent<VerticalLayoutGroup>().spacing = 8f;
         // This surface stays outside the workspace visual hierarchy and is placed once when opened.
         var title = CreateText(replayContent, "Replay title", "SOURCE REPLAY", 22f, 36f);
         title.gameObject.SetActive(false);
-        var replayStatus = CreateText(replayContent, "Replay provenance", "", 22f, 28f);
+        var replayStatus = CreateText(replayContent, "Replay provenance", "", 22f, 32f);
+        var time = CreateText(replayContent, "Source time", "00:00 / 00:00", 24f, 36f);
+        time.fontStyle = FontStyles.Bold;
         var sliderRoot = Instantiate(UiSet + "Prefabs/Slider/LargeSlider.prefab", replayContent);
-        SetLayout(sliderRoot, 48f);
+        SetLayout(sliderRoot, 40f);
         var slider = sliderRoot.GetComponentInChildren<Slider>(true);
         if (slider == null) throw new InvalidOperationException("Meta UI Set slider missing.");
         var intervalTrack = new GameObject("Selected source interval", typeof(RectTransform), typeof(LayoutElement));
@@ -238,28 +262,35 @@ public static class HandReviewSceneBuilder
         intervalRange.GetComponent<Image>().color = new Color(1f, .78f, .25f);
         intervalRange.GetComponent<Image>().raycastTarget = false;
         intervalRange.SetActive(false);
-        var evidenceLabel = CreateText(replayContent, "Selected evidence source", "", 20f, 24f);
+        var evidenceLabel = CreateText(replayContent, "Selected evidence source", "", 20f, 32f);
         evidenceLabel.color = new Color(1f, .86f, .5f);
-        var time = CreateText(replayContent, "Source time", "0.00s", 24f, 26f);
+        evidenceLabel.gameObject.SetActive(false);
         var playback = CreateRow(replayContent, "Playback");
         var previous = CreateButton(playback, "Frame −");
         var play = CreateButton(playback, "Play", primary: true);
         var next = CreateButton(playback, "Frame +");
-        var speed = CreateButton(playback, "Speed 1×");
+        var speed = CreateButton(playback, "Speed 1x");
         var speedChoices = CreateRow(replayContent, "Speed choices");
         var speedValues = new[] { "0.25×", "0.5×", "1×", "1.5×", "2×" };
         var speedButtons = speedValues.Select(value => CreateButton(speedChoices, value)).ToArray();
         speedChoices.gameObject.SetActive(false);
         var timing = CreateRow(replayContent, "Direction");
-        var reverse = CreateButton(timing, "Play backward");
+        var reverse = CreateButton(timing, "Forward");
         var restart = CreateButton(timing, "Restart");
         var insights = CreateButton(timing, "Insights");
-        var environment = CreateButton(timing, "Quiet room");
         var playMode = CreateButton(timing, "Play mode");
         var size = CreateRow(replayContent, "Hologram size and placement");
         var smaller = CreateButton(size, "Size −");
         var larger = CreateButton(size, "Size +");
         var resetBody = CreateButton(size, "Reset body");
+        var environment = CreateButton(size, "Moon");
+        foreach (var button in replayContent.GetComponentsInChildren<Button>(true))
+        {
+            var label = ButtonLabel(button);
+            label.fontSize = 22f;
+            label.overflowMode = TextOverflowModes.Ellipsis;
+            label.enableWordWrapping = false;
+        }
         var replaySettings = new SerializedObject(panel);
         RequireProperty(replaySettings, "externalLayout").boolValue = true;
         replaySettings.ApplyModifiedPropertiesWithoutUndo();
@@ -270,7 +301,17 @@ public static class HandReviewSceneBuilder
         var primary = CreateButton(actions, "New patient", true);
         var secondary = CreateButton(actions, "Next");
         FinishSurface(visuals, material, PanelHeight, root.transform, rig.centerEyeAnchor);
-        FinishSurface(replayRoot, material, 544f, head: rig.centerEyeAnchor, maximumHeight: 624f);
+        FinishSurface(replayRoot, material, 464f, head: rig.centerEyeAnchor, maximumHeight: 580f);
+        var track = slider.GetComponentsInChildren<Image>(true).FirstOrDefault(image => image.name == "Background");
+        if (track != null) track.color = new Color(.25f, .35f, .4f, 1f);
+        if (slider.fillRect != null && slider.fillRect.GetComponent<Image>() is Image fill)
+            fill.color = new Color(.15f, .72f, .9f, 1f);
+        if (slider.handleRect != null && slider.handleRect.GetComponent<Image>() is Image thumb)
+            thumb.color = Color.white;
+        var sliderColors = slider.colors;
+        sliderColors.normalColor = Color.white;
+        sliderColors.highlightedColor = new Color(.75f, .95f, 1f, 1f);
+        slider.colors = sliderColors;
         SetReferences(panel, ("playPauseButton", play), ("reverseButton", reverse),
             ("previousFrameButton", previous), ("nextFrameButton", next), ("restartButton", restart),
             ("speedButton", speed), ("speedChoicesRoot", speedChoices.gameObject), ("insightsButton", insights),
@@ -285,6 +326,8 @@ public static class HandReviewSceneBuilder
             ("canvasRect", FindChild(replayRoot, "CanvasRoot").GetComponent<RectTransform>()),
             ("backplateRect", replayContent), ("panelGrabHandle", FindChild(replayRoot, "Drag to move")));
         SetReferences(workflow, ("viewer", viewer), ("heading", heading), ("context", context), ("body", body),
+            ("bodyScroll", bodyScroll),
+            ("goataScoreGauge", scoreGauge),
             ("status", status), ("back", back), ("options", options), ("primary", primary),
             ("secondary", secondary), ("replayControls", replayRoot), ("preview", original),
             ("amplifiedPreview", amplified), ("previewRoot", previews), ("previewCaption", previewCaption),
@@ -579,6 +622,58 @@ public static class HandReviewSceneBuilder
         handle.transform.localScale = scale;
         handle.GetComponent<Renderer>().sharedMaterial = material;
         return handle;
+    }
+
+    private static TMP_Text CreateScrollableBody(Transform parent, out ScrollRect scroll)
+    {
+        var root = new GameObject("Scrollable conclusions", typeof(RectTransform), typeof(Image), typeof(ScrollRect), typeof(LayoutElement));
+        root.transform.SetParent(parent, false);
+        root.GetComponent<Image>().color = Color.clear;
+        SetLayout(root, 150f);
+        scroll = root.GetComponent<ScrollRect>();
+        scroll.horizontal = false;
+        scroll.vertical = true;
+        scroll.inertia = false;
+        scroll.movementType = ScrollRect.MovementType.Clamped;
+        scroll.scrollSensitivity = 24f;
+
+        var viewport = new GameObject("Conclusion viewport", typeof(RectTransform), typeof(Image), typeof(RectMask2D));
+        viewport.transform.SetParent(root.transform, false);
+        viewport.GetComponent<Image>().color = Color.clear;
+        var viewportRect = viewport.GetComponent<RectTransform>();
+        viewportRect.anchorMin = Vector2.zero; viewportRect.anchorMax = Vector2.one;
+        viewportRect.offsetMin = Vector2.zero; viewportRect.offsetMax = new Vector2(-32f, 0f);
+        var text = CreateText(viewport.transform, "Page detail", "", 24f, 150f);
+        Object.DestroyImmediate(text.GetComponent<LayoutElement>());
+        var textRect = text.rectTransform;
+        textRect.anchorMin = new Vector2(0f, 1f); textRect.anchorMax = Vector2.one;
+        textRect.pivot = new Vector2(0f, 1f);
+        textRect.anchoredPosition = Vector2.zero; textRect.sizeDelta = Vector2.zero;
+        var fitter = text.gameObject.AddComponent<ContentSizeFitter>();
+        fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+        fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        scroll.content = textRect;
+        scroll.viewport = viewportRect;
+
+        var barRoot = new GameObject("Conclusion scrollbar", typeof(RectTransform), typeof(Image), typeof(Scrollbar));
+        barRoot.transform.SetParent(root.transform, false);
+        var barRect = barRoot.GetComponent<RectTransform>();
+        barRect.anchorMin = new Vector2(1f, 0f); barRect.anchorMax = Vector2.one;
+        barRect.pivot = new Vector2(1f, .5f); barRect.anchoredPosition = Vector2.zero;
+        barRect.sizeDelta = new Vector2(24f, 0f);
+        barRoot.GetComponent<Image>().color = new Color(.13f, .22f, .28f, 1f);
+        var handle = new GameObject("Scroll thumb", typeof(RectTransform), typeof(Image));
+        handle.transform.SetParent(barRoot.transform, false);
+        var handleRect = handle.GetComponent<RectTransform>();
+        handleRect.anchorMin = Vector2.zero; handleRect.anchorMax = Vector2.one;
+        handleRect.offsetMin = new Vector2(3f, 3f); handleRect.offsetMax = new Vector2(-3f, -3f);
+        handle.GetComponent<Image>().color = new Color(.65f, .85f, .95f, 1f);
+        var bar = barRoot.GetComponent<Scrollbar>();
+        bar.handleRect = handleRect; bar.targetGraphic = handle.GetComponent<Image>();
+        bar.direction = Scrollbar.Direction.BottomToTop;
+        scroll.verticalScrollbar = bar;
+        scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
+        return text;
     }
 
     private static Transform CreateRow(Transform parent, string name)

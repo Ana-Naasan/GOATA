@@ -37,7 +37,7 @@ namespace Physio.Replay
                 var samples = Samples(replay, Torso, operation);
                 return samples.Length < 2 ? Array.Empty<JObject>() : new[] {
                     Card(replay, samples, testType == "elk" ? "elk.lateral_torso_lean" : "rtk.shoulder_pelvis_rotation",
-                        "not_applicable", Torso, condition, Label(operation, Peak(samples).Value), Definition(operation)) };
+                        "not_applicable", Torso, condition, Label(operation, Peak(samples).Value), TorsoExplanation(operation, samples)) };
             }
             if (testType != "walking") return Array.Empty<JObject>();
             var leftNames = KneeNames("left");
@@ -54,7 +54,7 @@ namespace Physio.Replay
             AddKnee(cards, replay, comparable ? commonRight : right, comparable ? commonLeft : null, "right", rightNames, condition);
             var trunk = Samples(replay, Torso, "inclination");
             if (trunk.Length >= 2) cards.Add(Card(replay, trunk, "walking.trunk_lean", "not_applicable", Torso,
-                condition, Label("inclination", Peak(trunk).Value), Definition("inclination")));
+                condition, Label("inclination", Peak(trunk).Value), TorsoExplanation("inclination", trunk)));
             return cards.ToArray();
         }
 
@@ -63,23 +63,49 @@ namespace Physio.Replay
         {
             if (samples.Length < 2) return;
             var label = "Estimated " + side + " knee bending";
-            var explanation = Definition("knee");
+            var own = Peak(samples);
+            var sideTitle = side == "left" ? "Left" : "Right";
+            var conclusion = "Your " + side + " knee's deepest recorded bend is shown below; the other knee could not be compared.";
+            var explanation = sideTitle + " knee peaked at " + Display(own.Value) + "° at " + SourceTime(own) + " s.";
             if (otherSamples == null)
                 explanation += " Bilateral comparison unavailable: fewer than two source frames have valid, nondegenerate joints for both legs.";
             else
             {
-                var own = Peak(samples);
                 var other = Peak(otherSamples);
                 var otherSide = side == "left" ? "right" : "left";
                 var difference = DisplayValue(own.Value) - DisplayValue(other.Value);
+                conclusion = difference == 0 ? "Both knees reached the same deepest bend at the displayed precision." :
+                    "Your " + (difference > 0 ? side : otherSide) + " knee reached a deeper bend than your " +
+                    (difference > 0 ? otherSide : side) + ".";
                 label = (side == "left" ? "Left" : "Right") + " knee: " +
                     (difference == 0 ? "equal displayed peaks" : difference > 0 ? "higher bending peak" : "lower bending peak");
-                explanation += " Both peaks use only the same eligible source frames. The " + side + " peak is " +
-                    Display(own.Value) + " degrees at source " + SourceTime(own) + " s; the " + otherSide + " peak is " +
-                    Display(other.Value) + " degrees at source " + SourceTime(other) +
-                    " s. Peaks may occur at different moments; this does not establish gait asymmetry or limp.";
+                explanation = sideTitle + " knee peaked at " + Display(own.Value) + "° at " + SourceTime(own) +
+                    " s; " + otherSide + " at " + Display(other.Value) + "° at " + SourceTime(other) + " s. " +
+                    (difference == 0 ? "Peaks are equal at displayed precision." : sideTitle + " peak was " +
+                    Display(Math.Abs(difference)) + "° " + (difference > 0 ? "higher." : "lower."));
             }
+            explanation = conclusion + "\n" + explanation + "\n" + Definition("knee") + (otherSamples == null ? "" :
+                " Both peaks use the same eligible source frames. Separate peak moments do not establish gait asymmetry or limp.");
             cards.Add(Card(replay, samples, "walking.knee_flexion", side, names, condition, label, explanation));
+        }
+
+        private static string TorsoExplanation(string operation, Measurement[] samples)
+        {
+            var peak = Peak(samples);
+            var minimum = DisplayValue(samples.Min(s => s.Value));
+            var maximum = DisplayValue(samples.Max(s => s.Value));
+            var conclusion = operation == "lateral"
+                ? minimum < 0 && maximum > 0 ? "Your upper body leaned to both the left and the right."
+                    : maximum > 0 ? "Your upper body leaned toward your left in the sampled frames."
+                    : minimum < 0 ? "Your upper body leaned toward your right in the sampled frames."
+                    : "Sideways tilt rounded to zero in the sampled frames."
+                : operation == "rotation"
+                    ? maximum > 0 ? "Your shoulders were turned relative to your hips." : "Shoulder–hip rotation rounded to zero in the sampled frames."
+                    : maximum > 0 ? "Your upper body tilted away from upright in the sampled frames." : "Upper-body tilt rounded to zero in the sampled frames.";
+            var title = operation == "lateral" ? "Signed torso lean" : operation == "rotation" ? "Shoulder–pelvis offset" : "Torso inclination";
+            var direction = operation == "lateral" ? " (positive = left, negative = right)" : "";
+            return conclusion + "\n" + title + " ranged from " + Display(samples.Min(s => s.Value)) + "° to " + Display(samples.Max(s => s.Value)) +
+                "°. Peak " + Display(peak.Value) + "° at " + SourceTime(peak) + " s" + direction + ".\n" + Definition(operation);
         }
 
         private static string Label(string operation, double value)
@@ -161,7 +187,10 @@ namespace Physio.Replay
             {
                 ["observation_id"] = Guid.NewGuid().ToString(), ["method_id"] = MethodId, ["quantity_code"] = quantity,
                 ["label"] = (replay.Synthetic ? "Synthetic fixture: " : "") + label,
-                ["explanation"] = explanation + " Based on " + samples.Length.ToString(CultureInfo.InvariantCulture) + " eligible observed source frames.",
+                ["explanation"] = explanation + " Based on " + samples.Length.ToString(CultureInfo.InvariantCulture) +
+                    " eligible observed source frames across source " + SourceTime(samples[0]) + "–" + SourceTime(samples[samples.Length - 1]) +
+                    " s (" + Display(samples[samples.Length - 1].Source.SourceTime - samples[0].Source.SourceTime) +
+                    " s span; gaps are excluded, not continuous coverage).",
                 ["region"] = quantity == "walking.knee_flexion" ? "knee" : "torso", ["side"] = side,
                 ["evidence"] = new JObject { ["take_id"] = replay.Timeline.SourceTakeId.ToString(),
                     ["start_s"] = peak.Source.SourceTime, ["end_s"] = peak.Source.SourceTime,

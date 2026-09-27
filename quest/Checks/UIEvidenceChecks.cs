@@ -33,8 +33,11 @@ static class UIEvidenceChecks
         Check(InsightPresentation.SourceLabel(null, 1, 2).StartsWith("Source take"), "unknown view not fabricated");
         var observation = JObject.Parse("{\"label\":\"Torso lean\",\"method_id\":\"geometry\",\"explanation\":\"Fitted torso orientation.\",\"region\":\"torso\",\"side\":\"not_applicable\",\"evidence\":{\"start_s\":1.0,\"end_s\":2.0,\"quality\":\"limited\",\"quality_reason\":\"Occlusion possible.\"},\"limitations\":[\"Fitted joints may be hidden.\",\"Not a lumbar measurement.\"],\"metrics\":[{\"name\":\"peak\",\"value\":12.25,\"unit\":\"deg\"}]}");
         var card = InsightPresentation.Card(observation, "front");
-        Check(card.Contains("Estimated") && card.Contains("12.3°") && card.Contains("Front take") && card.Contains("Pose estimate"), "card estimate value source and measurement basis labels");
-        Check(InsightPresentation.Summary(observation, "front").Contains("Fitted joints may be hidden."), "specific limitation visible outside details");
+        Check(card.StartsWith("Torso lean") && card.Contains("12.3°") && card.Contains("Front take") && card.Contains("Pose estimate"), "card leads with observation and retains estimate footer");
+        Check(InsightPresentation.Summary(observation, "front").StartsWith("Fitted torso orientation.") && InsightPresentation.Summary(observation, "front").Contains("Pose estimate"), "main review leads with conclusion and retains estimate footer");
+        Check(InsightPresentation.Summary(observation, "front").Contains("Fitted torso orientation."), "measured conclusion visible in main review");
+        var longObservation = (JObject)observation.DeepClone(); longObservation["explanation"] = new string('x', 1000);
+        Check(InsightPresentation.Summary(longObservation, "front").Length < 380, "long saved explanations remain bounded in review");
         var method = JObject.Parse("{\"name\":\"Joint geometry\",\"version\":\"v2\"}");
         var detail = InsightPresentation.Details(observation, "front", method);
         Check(detail.Contains("Joint geometry · v2") && detail.Contains("Not a lumbar measurement.") && detail.Contains("Occlusion possible."), "details preserve all limitations method and quality reason");
@@ -45,7 +48,7 @@ static class UIEvidenceChecks
         Check(InsightPresentation.ClampObservationPage(2, 3, false) == 2, "assessment pages are independent of observations");
         Check(InsightPresentation.ClampObservationPage(2, 0, true) == 2, "historical empty observations do not clamp feature pages");
         Check(InsightPresentation.ClampObservationPage(4, 5, true) == 1, "observation cards clamp to own final page");
-        Console.WriteLine("PASS: 33 evidence routing, observation presentation and history checks");
+        Console.WriteLine("PASS: 35 evidence routing, observation presentation and history checks");
     }
     static void Check(bool value, string label) { if (!value) throw new Exception(label); }
 }

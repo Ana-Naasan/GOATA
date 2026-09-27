@@ -59,10 +59,14 @@ internal static class PatternChecks
         Check(Label(left).Contains("left", StringComparison.OrdinalIgnoreCase), "ELK names peak left lean");
         var right = One(Data(new[] { Pose(10), Pose(-40) }));
         Near(Peak(right), -40, "ELK negative peak retained");
+        Check(((string)right["explanation"]!).StartsWith("Your upper body leaned to both the left and the right."), "ELK plain conclusion follows observed sides");
+        var sameSide = One(Data(new[] { Pose(10), Pose(20) }));
+        Check(((string)sameSide["explanation"]!).StartsWith("Your upper body leaned toward your left in the sampled frames."), "same-side lean does not imply crossing zero");
         Check(Label(right).Contains("right", StringComparison.OrdinalIgnoreCase), "ELK names peak right lean");
         Check(Label(One(Data(new[] { Pose(.04), Pose(-.02) }))).Contains("rounds to 0.0°"), "ELK rounded zero explicit");
         var rotated = One(Data(new[] { Pose(rotation: 0), Pose(rotation: -70) }), "rtk");
         Near(Peak(rotated), 70, "RTK unsigned shortest rotation");
+        Check(((string)rotated["explanation"]!).StartsWith("Your shoulders were turned relative to your hips."), "RTK plain conclusion avoids anatomical direction");
         Check(Label(rotated) == "Relative torso rotation observed", "RTK has no anatomical direction");
         Near(Peak(One(Data(new[] { Pose(), Pose(rotation: 270) }), "rtk")), 90, "RTK wraps shortest angle");
         Near(Peak(One(Data(new[] { Pose(), Pose(rotation: 180) }), "rtk")), 180, "RTK upper boundary");
@@ -75,6 +79,8 @@ internal static class PatternChecks
         Near(Peak(walking[0]), 60, "left knee 180 minus included angle");
         Near(Peak(walking[1]), 40, "right knee estimate");
         Near(Peak(walking[2]), 25, "torso inclination uses estimated upright");
+        Check(((string)walking[0]["explanation"]!).StartsWith("Your left knee reached a deeper bend than your right.\nLeft knee peaked at 60.0° at 5.5 s; right at 40.0° at 5.87 s."), "walking plain conclusion retains separate peak moments below");
+        Check(((string)walking[2]["explanation"]!).StartsWith("Your upper body tilted away from upright in the sampled frames."), "walking plain torso conclusion avoids unsupported direction");
         Near(Time(walking[0]), 5.5, "left keeps own peak moment");
         Near(Time(walking[1]), 5.87, "right keeps own peak moment");
         Check(Label(walking[0]).Contains("left", StringComparison.OrdinalIgnoreCase), "higher peak left label");

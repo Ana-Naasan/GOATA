@@ -307,6 +307,28 @@ For the chosen method, record the exact output, required views, units/calibratio
 
 `processing/analysis/foot/` computes geometry from manual anatomical annotations. It has no automated landmark extraction or reference validation. Preserve the unavailable status and capture/evidence workflow for saved foot sessions. The user explicitly replaced this new-test requirement with Walking review on September 27, 2026; historical compatibility does not complete automated foot assessment.
 
+### 7.3a Goata Score demo rules
+
+The September 27 user-approved Goata Score is a local deterministic demo rating,
+separate from evaluated clinical findings. Start at 100 and subtract each
+category's severity (0–1) multiplied by its effective weight. Use two equal
+base weights of 50: Walking compares knee-bending peaks and upper-body tilt;
+ELK measures shoulder/hip twist and fore/aft tilt; RTK measures sideways and
+fore/aft tilt. Do not penalize ELK's intended side bend or RTK's intended twist.
+Full severity is reached at 20 degrees for knee-peak difference and 30 degrees
+for the other categories. These are explicit configurable app demo scales,
+not learned or validated correctness thresholds.
+
+Severity increases linearly from zero to the full-severity scale and is capped
+at one. At the user's request, unavailable categories are omitted and remaining
+positive weights are renormalized to 100 without a blocking warning. Details
+retain actual contributors, effective weights, method settings and original
+source evidence. No available category means no fabricated score. Display rounds
+to the nearest integer with halves away from zero; red is 0–50, yellow 51–90 and
+green 91–100. The compact dial includes the number and labels, not colour alone.
+Compute from original saved replay samples, never display transforms; clear the
+rating when patient, test, result or source replay changes.
+
 ### 7.4 Findings and feedback
 
 Each automated finding contains:
