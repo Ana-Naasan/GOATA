@@ -19,7 +19,10 @@ class FakeOOM(RuntimeError):
 
 
 class WorkerTests(unittest.TestCase):
-    def check_worker(self, residency, fail_at=None, diagnostic_failure=False, skip_model=None, cleanup_failure=False):
+    def check_worker(self, residency, fail_at=None, diagnostic_failure=False, skip_model=None, cleanup_failure=False,
+                     **controls):
+        from lifecycle import validate_controls
+        settings = validate_controls(**controls)
         with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as folder, ExitStack() as stack:
             root = Path(folder)
             inputs, output = root/'inputs', root/'output'
@@ -59,6 +62,7 @@ class WorkerTests(unittest.TestCase):
             stack.enter_context(patch('models.Detector', factories['detector']))
             stack.enter_context(patch('adapter.load_demo_model', factories['gvhmr']))
             stack.enter_context(patch('models.WorkerModels.residency'))
+            precision_setup = stack.enter_context(patch('models.WorkerModels.setup_precision'))
             moves = stack.enter_context(patch('models.WorkerModels.move'))
             if fail_at == 'transfer' or cleanup_failure:
                 def move(name, model, device):
@@ -75,7 +79,8 @@ class WorkerTests(unittest.TestCase):
             stores = []
             def infer(video, sidecar, output, offset, variant, worker):
                 stores.append(worker.store)
-                self.assertEqual(variant, '960-15')
+                self.assertEqual(variant, settings['variant'])
+                self.assertEqual(worker.settings, settings)
                 if residency == 'resident':
                     self.assertEqual(worker.store.constructors, dict.fromkeys(MODEL_NAMES, 1))
                 for name in ('detector', 'pose', 'features', 'gvhmr', 'body'):
@@ -93,18 +98,20 @@ class WorkerTests(unittest.TestCase):
             inference = stack.enter_context(patch('fast.run', side_effect=infer))
             if skip_model:
                 with self.assertRaisesRegex(RuntimeError, 'model use count mismatch'):
-                    run(inputs, output, [0, 1, 2, 3], time.monotonic_ns(), residency=residency)
+                    run(inputs, output, [0, 1, 2, 3], time.monotonic_ns(), residency=residency, **controls)
                 self.assertFalse((output/'result.json').exists())
                 return
             if fail_at:
                 with self.assertRaises(FakeOOM) as raised:
-                    run(inputs, output, [0, 1, 2, 3], time.monotonic_ns(), residency=residency)
+                    run(inputs, output, [0, 1, 2, 3], time.monotonic_ns(), residency=residency, **controls)
                 self.assertIs(raised.exception, error)
                 failure = json.loads((output/'failure.json').read_text())
                 self.assertFalse((output/'result.json').exists())
                 self.assertEqual(failure['residency_mode'], residency)
                 self.assertTrue(failure['cuda_oom'])
                 self.assertFalse(failure['fallback_applied'])
+                self.assertFalse(failure['all_resident_fit_proven'])
+                self.assertEqual(failure['experiment'], settings)
                 self.assertEqual(failure['completed_segments'], [])
                 self.assertEqual(failure['failed_stage'], {'constructor': 'constructor_deserialization/pose',
                                                          'transfer': 'transfer_cuda/pose', 'stage': 'pose',
@@ -130,7 +137,10 @@ class WorkerTests(unittest.TestCase):
                 self.assertEqual(inference.call_count,
                                  1 if residency == 'cpu-offload' or fail_at in ('stage', 'shutdown') else 0)
                 return
-            report = run(inputs, output, [0, 1, 2, 3], time.monotonic_ns(), residency=residency)
+            report = run(inputs, output, [0, 1, 2, 3], time.monotonic_ns(), residency=residency, **controls)
+            self.assertEqual(report['experiment'], settings)
+            self.assertEqual(report['all_resident_fit_proven'], residency == 'resident')
+            self.assertEqual(precision_setup.call_count, 5)
             self.assertEqual(inference.call_count, 4)
             self.assertEqual(report['residency_mode'], residency)
             self.assertEqual(report['lifecycle'], RESIDENCY_MODES[residency])
@@ -157,6 +167,11 @@ class WorkerTests(unittest.TestCase):
 
     def test_all_five_resident_before_first_segment_and_retained_for_four_takes(self):
         self.check_worker('resident')
+
+    def test_nondefault_controls_reach_every_inference_call(self):
+        self.check_worker('resident', precision='amp-fp16', variant='640-10', batch_size=8, vo_seed=123)
+        self.check_worker('resident', precision='weights-fp16', batch_size=4)
+        self.check_worker('resident', fail_at='stage', precision='weights-fp16', vo_seed=7)
 
     def test_cpu_offload_remains_separate_and_lazy(self):
         self.check_worker('cpu-offload')

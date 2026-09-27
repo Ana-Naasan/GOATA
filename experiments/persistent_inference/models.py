@@ -2,7 +2,7 @@
 import gc
 from pathlib import Path
 
-from lifecycle import IdentityRecords, RetainedModels, reset_detector
+from lifecycle import IdentityRecords, RetainedModels, reset_detector, validate_controls
 
 
 class Detector:
@@ -65,8 +65,11 @@ class Detector:
 
 
 class WorkerModels:
-    def __init__(self, metrics, root, assets, digest, residency='resident'):
+    def __init__(self, metrics, root, assets, digest, residency='resident', *,
+                 precision='fp32', variant='960-15', batch_size=2, vo_seed=0):
         self.metrics = metrics
+        self.settings = validate_controls(precision, variant, batch_size, vo_seed)
+        self.dtype_inventories = {}
         names = tuple('inputs/checkpoints/' + name for name in assets) + (
             'hmr4d/network/hmr2/configs/smpl_mean_params.npz',
             'hmr4d/utils/body_model/smplx2smpl_sparse.pt',
@@ -114,9 +117,30 @@ class WorkerModels:
             gc.collect()
             torch.cuda.empty_cache()
 
+    def setup_precision(self, name, obj):
+        import torch
+        from precision import NeuralForward, dtype_inventory
+        mode = self.settings['precision']
+        attribute = {'pose': 'pose', 'features': 'extractor'}.get(name)
+        if attribute:
+            setattr(obj, attribute, NeuralForward(getattr(obj, attribute), mode, name))
+        elif name != 'detector':
+            # YOLO's pinned backend already converts to FP32 exactly once.
+            self.module(name, obj).float()
+        module = self.module(name, obj)
+        expected = torch.float16 if attribute and mode == 'weights-fp16' else torch.float32
+        if any(t.is_floating_point() and t.dtype != expected
+               for t in list(module.parameters()) + list(module.buffers())):
+            raise RuntimeError(f'{name} parameters/buffers differ from requested precision')
+        self.dtype_inventories[name] = dtype_inventory(module)
+        self.metrics.emit(dict(event='model_precision', model=name, precision=mode,
+                               expected_floating_dtype=str(expected),
+                               dtype_inventory=self.dtype_inventories[name], memory=self.metrics.memory()))
+
     def factory(self, name, factory):
         def construct():
             obj = factory()
+            self.setup_precision(name, obj)
             self.residency(name, obj)
             return obj
         return construct

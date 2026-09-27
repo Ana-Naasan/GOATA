@@ -1,0 +1,22 @@
+{
+  "read_only_sources": {
+    "gvhmr": {
+      "sha256": {
+        "hmr4d/utils/preproc/tracker.py": "0b32eeaddbdd7425a262266761968c50d8ebe7da4d1b5019a8a84c34f773e6f8",
+        "hmr4d/utils/preproc/vitpose.py": "0cf3561d064b3f6467d035f872df37a6628325c28ca2285d1683de3e660bd185",
+        "hmr4d/utils/preproc/vitfeat_extractor.py": "c6cb61ba4b577cadebaf2ba7e35d0456a568edd65a726524ee5b7a5e952fe9de",
+        "hmr4d/utils/preproc/relpose/simple_vo.py": "b1677b61f28940d15b75b6529152e7997d07f9bae5c995a8e736ce29850eec4e",
+        "hmr4d/utils/preproc/relpose/solver_two_view.py": "2e9673010b3c6a6b33cecf2ee483645a8384afadd940bef602bfad92e040d9be",
+        "hmr4d/model/gvhmr/gvhmr_pl_demo.py": "0e866c8f486b46ab7fe3a67bd956e6a84a1212f17d3773f0de163dbfd384f250",
+        "hmr4d/model/gvhmr/pipeline/gvhmr_pipeline.py": "c99d514136d3b0ea321493b7f6486d645685176442b8ae8c478724ef694d77e4",
+        "hmr4d/model/gvhmr/utils/endecoder.py": "dd26cda551ec8bd9a974c8bd92baebcf513820bffaa4cb7fccdf7bad9e6f88b7",
+        "hmr4d/network/base_arch/embeddings/rotary_embedding.py": "590f00248bc5b289b4230463a7c735db46c1c6293b2a9c050d47a711c6cce137",
+        "hmr4d/network/hmr2/__init__.py": "4cd96c68e3ccbb0ef56a5d2dac9213c0f3eba8aa8ff21a7013f7e657550bdfb0",
+        "hmr4d/network/hmr2/configs/__init__.py": "3d995db69b124bf11d7c53014563603e402ba78b429718413b982052b3a39051",
+        "hmr4d/utils/smplx_utils.py": "e4f9a663a0680d05101bfd47e049e22553f020190df65d203007f0c4ce4f6d78",
+        "hmr4d/utils/body_model/body_model_smplx.py": "89205d282f267adf035b4670484b55cb80052015b0b61ab6e6d65dcc2ec66ed7",
+        "hmr4d/utils/body_model/smplx_lite.py": "f64ce5c324ab406b90de98ad89bb616194412daa9dc0100e5a7c860947fb92d1"
+      }
+    }
+  }
+}
