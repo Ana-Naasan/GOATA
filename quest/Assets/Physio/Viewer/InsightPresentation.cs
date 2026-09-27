@@ -47,12 +47,12 @@ namespace Physio.Viewer
         public static string EstimatedLabel(string label) => label.StartsWith("Estimated", StringComparison.OrdinalIgnoreCase) ? label : "Estimated · " + label;
 
         public static string Card(JObject item, string? view) =>
-            Compact(EstimatedLabel((string)item["label"]!), 58) + "\n" + Compact(Metrics(item), 68) +
-            "\n" + Source(item, view) + " · Limited evidence";
+            Compact((string)item["label"]!, 58) + "\n" + Compact(Metrics(item), 68) +
+            "\n" + Source(item, view) + " · Pose estimate";
 
         public static string Summary(JObject item, string? view) =>
-            "Selected: " + (string)item["region"]! + " · " + Source(item, view) +
-            "\nEstimated from reconstructed pose\nLimitation: " + Compact((string?)item["limitations"]?.FirstOrDefault() ?? "See evidence limitations.", 150);
+            Compact(string.Join("\n", ((string?)item["explanation"] ?? "No explanation available.").Split('\n').Take(2)), 300) +
+            "\n" + Source(item, view) + " · Pose estimate";
 
         public static string Details(JObject item, string? view, JToken? method) =>
             EstimatedLabel((string)item["label"]!) + "\n" + Metrics(item) + "\n" + Source(item, view) +

@@ -16,6 +16,9 @@ namespace Physio.Viewer
         [SerializeField] private Button captureButton = null!;
         [SerializeField] private Button replayButton = null!;
         [SerializeField] private Button optionsButton = null!;
+        [SerializeField] private Button closeButton = null!;
+        [SerializeField] private Button tomatoButton = null!;
+        [SerializeField] private ReplayPlayInteractions play = null!;
         [SerializeField] private DominantHandRef hand = null!;
         [SerializeField] private Transform head = null!;
         private bool opened;
@@ -27,6 +30,8 @@ namespace Physio.Viewer
             captureButton.onClick.AddListener(Capture);
             replayButton.onClick.AddListener(Replay);
             optionsButton.onClick.AddListener(Options);
+            closeButton.onClick.AddListener(Close);
+            tomatoButton.onClick.AddListener(SpawnTomato);
             shelf.SetActive(false); handRoot.SetActive(false);
         }
 
@@ -40,17 +45,28 @@ namespace Physio.Viewer
             if (!eligible) revealAt = -1;
             else if (revealAt < 0) revealAt = Time.unscaledTime + .15f;
             var show = eligible && Time.unscaledTime >= revealAt;
-            if (!show) { opened = false; shelf.SetActive(false); }
+            if (!viewer.HasInputFocus) Close();
             handRoot.SetActive(show);
-            captureButton.interactable = show && workflow.CanOpenCapture;
-            replayButton.interactable = show && workflow.CanOpenReplay;
-            optionsButton.interactable = show && workflow.CanOpenOptions;
+            captureButton.interactable = opened && workflow.CanOpenCapture;
+            replayButton.interactable = opened && workflow.CanOpenReplay;
+            optionsButton.interactable = opened && workflow.CanOpenOptions;
+            tomatoButton.gameObject.SetActive(play.IsPlayMode);
+            tomatoButton.interactable = opened && play.IsPlayMode;
         }
 
-        private void Toggle() { if (!viewer.HasInputFocus) return; opened = !opened; shelf.SetActive(opened); }
+        private void Toggle()
+        {
+            if (!viewer.HasInputFocus) return;
+            if (opened) { Close(); return; }
+            var yaw = Quaternion.Euler(0, head.eulerAngles.y, 0);
+            shelf.transform.SetPositionAndRotation(head.position + yaw * new Vector3(-.48f, -.55f, 1.25f), yaw);
+            opened = true;
+            shelf.SetActive(true);
+        }
         private void Capture() { workflow.OpenCaptureShortcut(); Close(); }
         private void Replay() { workflow.OpenInsightsShortcut(); Close(); }
-        private void Options() { workflow.OpenOptions(); Close(); }
+        private void Options() { viewer.BringPanelToView(); workflow.OpenOptions(); Close(); }
+        private void SpawnTomato() { play.SpawnTomato(); Close(); }
         private void Close() { opened = false; shelf.SetActive(false); }
         private void OnDestroy()
         {
@@ -58,6 +74,8 @@ namespace Physio.Viewer
             if (captureButton != null) captureButton.onClick.RemoveListener(Capture);
             if (replayButton != null) replayButton.onClick.RemoveListener(Replay);
             if (optionsButton != null) optionsButton.onClick.RemoveListener(Options);
+            if (closeButton != null) closeButton.onClick.RemoveListener(Close);
+            if (tomatoButton != null) tomatoButton.onClick.RemoveListener(SpawnTomato);
         }
     }
 }

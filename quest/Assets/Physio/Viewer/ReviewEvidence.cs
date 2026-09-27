@@ -23,6 +23,19 @@ namespace Physio.Viewer
             _ => throw new ArgumentException("Unknown test.", nameof(test))
         };
 
+        public static string SessionStatus(string status) => status switch
+        {
+            "awaiting_capture" => "Continue recording",
+            "captured" => "Ready to process",
+            "uploading" => "Uploading recording",
+            "queued" or "running" or "processing" => "Processing",
+            "downloading" => "Loading result",
+            "ready" or "loaded" or "succeeded" => "Ready to review",
+            "failed" or "retry_required" => "Needs retry",
+            "paused" => "Processing paused",
+            _ => "Status unavailable"
+        };
+
         public static string[] Pages(string text, int maxCharacters = 420)
         {
             if (maxCharacters < 1) throw new ArgumentOutOfRangeException(nameof(maxCharacters));

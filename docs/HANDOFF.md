@@ -1,11 +1,410 @@
 # Codex session handoff
 
-**Last updated:** September 27, 2026. Walking review and source-linked estimated
-insights are implemented at source commit `bbf4e26` on `codex/walking-insights` in
-`/Users/baderasadi/.codex/worktrees/hamza-quest/HTH`, based on `main` at `3bad1a7`
-([PR #11](https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp/pull/11), including
-Mohammad's PR #10). M1 and clinical evaluation remain incomplete: no fresh Quest
-participant recording has completed capture → GPU → loaded saved review.
+**Last updated:** September 27, 2026. Quest **0.3.6 / Android code 13** is
+built, installed over USB and launched with an authenticated private-service
+connection. All **423** saved app files survived unchanged. It includes the
+approved replay UI fixes, plain-language conclusions and deterministic Goata
+Score. Scrollable conclusions are being packaged in 0.3.7 / Android code 14.
+Source is on `codex/hci-quest-ui` in
+`/Users/baderasadi/.codex/worktrees/hci-quest-ui/HTH`.
+The saved Walking reconstruction passed local scoring/source-binding checks.
+Full wearer acceptance and evaluated exercise correctness remain incomplete.
+Historical release evidence is retained below.
+
+## Concise recording-specific summaries (0.3.4)
+
+On `codex/hci-quest-ui`, the review now leads with measured conclusions: knee
+peaks with their separate source moments and displayed difference, signed ELK
+lean bounds, RTK shoulder–pelvis offset bounds, and Walking torso inclination
+bounds. Source samples, validity rules and peak evidence are unchanged. Details
+retain the method, sample count and source span, explicitly excluding gaps.
+The selected conclusion is visible in the main review; long historical
+explanations are bounded there and remain complete in Details.
+
+Focused checks only, as requested for the deadline:
+`/Users/baderasadi/Library/Caches/HTH/dotnet/dotnet run --project
+quest/Checks/PatternChecks.csproj --no-restore` passed **81 checks** after the new
+conclusion assertion first failed against the old implementation.
+The equivalent `UIEvidenceChecks.csproj` command passed **35 checks**.
+The private saved Walking proof reran deterministically except observation IDs
+and verified source frame/time bindings; participant values remain outside Git.
+ELK/RTK used synthetic sanity checks only. General and C# reviews found no
+remaining blocker after bounding historical summary text.
+
+Unity 6000.0.66f2 built **0.3.4 / Android code 11** successfully, exiting 0;
+log: `/tmp/physio-hci-ui-034-build-final.log`. `aapt` confirmed the APK version
+and `apksigner verify --verbose` passed (v2 signature).
+APK: `quest/Builds/PhysioFixture.apk`, **86,362,594 bytes**, SHA-256
+`e75ed59b2808681d7c0c8d73f4863af61cd3ad70e5b04ba75f8251b507a7732d`.
+Generated scene-ID and TMP serialization churn was restored; the runtime source
+contains the UI changes. Installation, wearer acceptance and clinical assessment
+validation are not established by these checks.
+
+## Approved video-audit fixes (0.3.5)
+
+The user approved five changes after four parallel frame reviews of the supplied
+Physio recording: plain-language insights, bounded button text, readable timeline,
+initial HUD/body separation and less obstructive manipulation handles.
+
+- Deterministic summaries lead with ordinary language; angles, source times and
+  complete method/limitations remain available. Existing sample validity and
+  source mappings are unchanged; this adds no trained assessment model.
+- Replay controls use four buttons per row, shorter labels, supported text,
+  current/total time, a contrasting slider and compact optional rows.
+- The initial HUD goes opposite the body relative to the head and faces the
+  wearer; Reset body also repositions it. The panel remains independently movable.
+- Grip meshes are smaller while original grab/ray colliders and Meta hover/select
+  feedback remain. Grips remain discoverable rather than disappearing entirely.
+- The recorded red/purple wireframes have no confirmed app source. No system
+  boundary setting was changed.
+
+Focused verification: 81 pattern checks, 35 UI evidence checks, real saved Walking
+reconstruction proof with deterministic conclusions/source binding, and quick C#
+reviews passed. ELK/RTK checks use synthetic geometry. This is not full headset E2E
+acceptance; opening Insights may still need panel-position adjustment and wearer
+confirmation. No participant recordings were changed or recovered.
+
+Unity built 0.3.5 / Android code 12 successfully; APK signing/version checks passed.
+SHA-256: `e3ddbe63b11fd494dc94fa2956c2b8150985049bbb915f1e168c794b82ead635`.
+Wireless installation initially failed because the Quest disconnected; USB installation
+then succeeded. All 423 saved files were unchanged. The app launched and reached
+the authenticated service. A headset screenshot confirmed the new replay HUD
+rendered with fitting labels and elapsed/total time. The scene builder regenerates
+the UI during FixtureBuild.Build.
+
+## Goata Score demo rules (0.3.6)
+
+The user requested a deterministic 0–100 Goata Score with equal category weights
+and explicit demo cutoffs. This adds no trained model or validated correctness
+assessment. Raw score is `100 - sum(severity * effective_weight)`.
+
+| Test | Two categories, base weight 50 each | Full-severity demo scales |
+|---|---|---|
+| Walking | Difference between left/right knee bending peaks; upper-body inclination | 20 degrees; 30 degrees |
+| ELK | Shoulder-to-hip twist; fore/aft torso tilt | 30 degrees each |
+| RTK | Sideways torso tilt; fore/aft torso tilt | 30 degrees each |
+
+Severity is the absolute measured angle divided by its scale, capped at one.
+ELK's intended side bend and RTK's intended twist are not scored as deductions.
+The two walking peaks retain their separate original evidence moments.
+
+At the user's request, missing categories are omitted and available positive
+weights are automatically renormalized to 100, without a blocking warning.
+Details list the actual contributing categories, effective weights, rules and
+source times. Zero available contributors yield no invented numeric score.
+The display rounds to the nearest integer, halves away from zero, then uses
+red 0–50, yellow 51–90 and green 91–100. A compact native UI dial accompanies
+plain-language summaries; no new graphics package or image assets are required.
+
+The gauge clears on navigation and original-evidence viewing, and requires the
+current patient/session/test/replay identity. Existing saved geometry is reused;
+no rerecording, recovery, upload, or original-result mutation is needed.
+
+Verification: 35 focused score checks include thresholds, invalid input,
+partial-data weighting, intended-movement exclusions, deterministic scoring of
+an actual saved Walking result and source binding. C# review passed. The review
+layout retains all cards and Details within the existing panel height. Unity
+build succeeded (`/tmp/physio-hci-ui-036-build.log`); ADB confirmed installed
+0.3.6 / code 13. All 423 saved files were unchanged, and the app reached the
+authenticated service at 09:55:39 EDT. Wearer acceptance remains required.
+
+## Scrollable conclusions (0.3.7)
+
+The user requested scrolling and a combined push with Goata Score. The existing
+text body now uses Unity's native ScrollRect, a masked raycastable viewport,
+preferred-height text and a vertical scrollbar. The score stays in a fixed
+sibling row. Text retains its normal font size; review summaries and Details
+share scrolling, and reopening a page resets to the top. No dependency added.
+C# review verified the generated hierarchy, serialized wiring and Meta pointer
+drag event support. The exact helper compiled against installed Unity/UI/TMP
+assemblies without warnings or errors. Focused checks passed: 35 score checks
+with saved Walking geometry and 35 evidence/presentation checks.
+Build/install are pending; physical scrolling acceptance remains unverified.
+
+## UI redesign and wireless deployment
+
+The user authorized the UI/workflow rebuild, then installation and remote push.
+The source baseline is the latest available checked-in checkout above; the prior
+on-device 0.2.4 package was backed up locally before updating to 0.3.0.
+
+- One Meta UI Set workspace, compact replay HUD, consistent colours, bounded
+  movable uniformly scaled panels, source-linked anatomical highlighting and
+  grounded initial replay at 1x reconstructed source scale.
+- Explicit camera framing before countdown; elapsed capture/processing clocks;
+  animated ELK/RTK/Walking movement dropdowns hidden during framing/recording and
+  during supplemental microscope steady holds. Patient/test/view context remains.
+- Optional stationary Moon facility with Earth, Kenney assets and a passthrough
+  resume gate before capture. Play mode adds presentation-only head nudges and
+  transient tomato splats. Real-room wall splats remain incomplete.
+- Physical size is still estimated reconstruction scale, not measured height.
+  Source recordings, metrics, original-frame mappings and clinical scope remain.
+
+Unity **6000.0.66f2**, Meta Interaction SDK **85.0.0**, Android API 34/ARM64:
+`FixtureBuild.Build` exited 0 with `Build Finished, Result: Success`.
+APK: **86,281,822 bytes**, SHA-256
+`37cfc5b99c5a3106f06dd64e92663ee122902dc4b14fa791adc2f98af4e7759e`.
+`adb -s 10.198.154.65:5555 install -r quest/Builds/PhysioFixture.apk` succeeded on
+Quest 3 serial `2G97C5ZH95010L`. Installed APK hash matches, and all **257** saved
+app files matched their pre-install hashes before launch. No app data was cleared.
+`am start -W` reported `Status: ok`, `LaunchState: COLD`; startup PID 26421 reached
+tracked-head placement and `PHYSIO_VIEWER_READY` without a managed exception in
+the sampled log. This verifies installation/startup, not wearer acceptance.
+
+C# checks passed: Replay **136**, Importer **174**, Capture **104**, Workflow
+**673**, UI evidence **33**, Spatial capture **33**, authored Demo **19,827**.
+General/C# review and the scoped security/asset-publication review found no
+remaining blocker. `pip-audit` found no known vulnerabilities; C#/Markdown
+whitespace checks passed. Unity's generated scene is retained for opening the
+updated interface; the unrelated TMP serialization migration was restored.
+
+Build and deployment proof, prior APK and local screenshot are outside Git at
+`/Users/baderasadi/Library/Caches/HTH/hci-ui-deploy-030/`. Imported asset provenance
+is in `quest/Assets/Physio/Art/{Moon,Tomato}/ASSET_SOURCES.md`; no participant media,
+APK or credentials are committed. Main code changes are the scene builder,
+capture presentation/recorder, replay placement/insights/HUD, movement examples,
+panel bounds and environment/play interaction components.
+
+Next: wear the headset and accept panel size/reach, camera framing, saved replay
+timeline, grounded scaling, Moon/passthrough transition and Play controls. New
+captures require the authenticated processing service; the 0.3.1 restoration
+below reconnects the already-running private service. This deployment updated
+the Quest client only. Historical milestones below are
+retained as evidence, not new verification of this release.
+
+## Automatic connection restoration (0.3.1)
+
+The 0.3.0 UI build omitted connection integration present in the earlier local
+`ml-optimization-review` checkout. The existing private GPU service and Mac SSH
+tunnel were already available. This fix ports only that connection integration;
+it preserves the redesigned interface and the earlier checkout's unrelated work.
+
+- Consume and delete bounded runtime connection configuration on startup. Keep
+  the token and optional TLS leaf fingerprint in memory for the app session.
+- Check authentication in the background through a random nonexistent-job GET.
+  Local patient/capture actions remain usable; no recording is uploaded and no
+  inference job is created by this check.
+- Use the same verified TLS handler for processing. Explicit pinning retains
+  hostname and certificate date checks; ordinary CA validation remains the
+  default. Redirects are disabled. Options displays connection status and the
+  configured endpoint without exposing credentials.
+- Restore the existing private route: Quest loopback 8443 → wireless ADB reverse
+  → Mac loopback 8443 → existing SSH tunnel → GPU service. This is session
+  provisioning: after a full app restart the private launcher must supply the
+  configuration again. Keep the laptop and its connections available.
+
+The new `quest/Checks/ConnectionChecks.csproj` failed before implementation and
+then passed **49 checks**, including real TLS handshakes, malformed/oversized
+configuration, one-use deletion, authentication rejection and a read-only probe.
+The existing workflow suite passed **673 checks**. General/C# review resolved
+startup error masking, stale connection status and blocked local navigation;
+scoped security review found no blocker. `pip-audit` reported no known
+vulnerabilities. No dependency or backend model changes were made.
+
+Unity **6000.0.66f2** built 0.3.1 successfully with `FixtureBuild.Build` (Android
+API 34/ARM64). APK: **86,305,706 bytes**, SHA-256
+`40840557c84e202ae75377bacbcc1197673e69b97541c5580de9d17ab530dce3`.
+APK signing verification passed. Wireless `adb install -r` succeeded, installed
+version **0.3.1 / code 8** and APK hash were verified, and all **305** app file
+hashes matched before relaunch. No app data was cleared.
+
+The existing private launcher restored `tcp:8443` reverse forwarding and
+provisioned the connection without printing credentials. Startup PID **30063**
+logged `PHYSIO_VIEWER_READY` and `PHYSIO_CONNECTION_READY` at **07:07:45 EDT**.
+The one-use configuration file was confirmed absent afterward. This verifies
+Quest TLS/authentication and startup, not inference or a new capture-to-review
+run; no participant recording was submitted during verification.
+
+Commands used: `dotnet run --project quest/Checks/ConnectionChecks.csproj
+--no-restore`, the corresponding `WorkflowChecks.csproj` command, Unity's batch
+build, APK signature/version checks, wireless `adb install -r`, before/after
+device SHA-256 comparisons, the existing private provisioning launcher and
+process-specific `adb logcat`. The .NET runtime is the existing cached runtime;
+no installation was needed. Build logs, startup logs and file-hash evidence are
+outside Git at `/Users/baderasadi/Library/Caches/HTH/hci-ui-deploy-031/`.
+Unrelated generated scene-ID churn and TMP serialization were restored; only
+the intended application version changes remain in project settings.
+
+Next: reopen the saved patient/test and choose **Process / retry**. Keep the
+laptop, wireless ADB and SSH tunnel available. A full app restart needs the
+private provisioning launcher again; credentials are not stored permanently.
+
+## Camera orientation regression (0.3.2)
+
+The user reported inference failure after recording with the UI rebuild. The
+private GPU log stopped at `require exactly one tracked person in every inference
+image`; authentication and upload had succeeded. The rebuilt recorder had lost
+an earlier verified encoding fix: `!SystemInfo.graphicsUVStartsAtTop` is not the
+row order of Quest Vulkan GPU readback. It wrote vertically inverted MP4 pixels
+while the sidecar described an upright image.
+
+The fix restores the proven explicit row reversal in `OpenEncoder`, marks new
+captures with adapter `85.0.0/2`, and retains the current framing/countdown UI.
+The independent `quest/Checks/check_capture_orientation.py` checks an asymmetric
+synthetic recording through the actual encoder. Its expected blue-above-red,
+green-on-left pattern rejects the earlier faulty recording. Capture checks:
+**106 passed**. C# review found no blocker.
+
+The processing pipeline now rejects exact legacy adapter `/1` before running
+any processor, including supplemental and historical foot sources, with an
+actionable new-test message. Existing recordings and saved results are retained.
+Only these reviewed validation hunks were applied to the private deployed source,
+preserving its other local enhancements. Four existing legacy sidecars were
+rejected and corrected `/2` metadata accepted without launching inference.
+The idle service restarted cleanly as PID **1511763**. Pipeline tests: **20
+passed**, Ruff clean, dependency audit clear; Python/security reviews passed.
+
+Before the user cancelled recovery, a private diagnostic isolated the fault:
+the failed take lost detection on **12/301** inference frames; explicit row
+reversal produced one unchanged identity in **301/301**. Full native diagnostic
+inference completed in **57.25 seconds**, with eight artifact size/hash checks,
+finite geometry and source-frame/time mappings verified. This was diagnostic
+output only. The user subsequently chose to record a new video: recovery work
+was stopped before creating a recovery package; nothing was imported or
+published, and no source recording or job record was changed. Diagnostic proof
+is outside Git under `Library/Caches/HTH/incident-20260927-0709/`; the private
+server has the matching incident directory.
+
+The first orientation-correct candidate exposed a second lost encoder fix:
+its synthetic benchmark encoded **84/90** frames, dropping six while conversion
+averaged **34.4 ms/frame**. Restored the existing expanded 2×2 YUV conversion and
+six-frame bounded scheduling queue; original timestamps and pixel values remain.
+Java review and strict compilation passed, including **1,600** randomized layout
+comparisons, **four** full-resolution comparisons, colour, padding, shared UV/VU,
+scratch reuse and cursor checks.
+
+The full Unity 6000.0.66f2 build succeeded. After the Java-only performance
+restoration, its generated Gradle project rebuilt with Unity's bundled Java and
+Gradle 8.13 (`assembleDebug`, **44 seconds**). All **428** Unity asset/native ZIP
+entries match the full-build candidate byte-for-byte; only `classes3.dex`
+changed. Final APK: **86,314,298 bytes**, SHA-256
+`3159f3edf3a9e2562e31b41c0587794eff4eab16bee267b9681c021c56348554`.
+Signing verification and wireless installation succeeded; the installed APK
+hash matches. All **305** saved app files match their pre-install hashes.
+
+The final on-Quest synthetic benchmark (PID **3810**, **07:30:36–39 EDT**)
+encoded **90/90** frames, **zero** misses or queue-full rejections, at **30.00 fps**.
+YUV conversion averaged **20.6 ms/frame**, maximum **24.0 ms**; sampled queue depth
+peaked at one. Mux timestamp verification and the independent upright-pixel
+oracle passed. The benchmark never opens a camera or creates patient evidence.
+This verifies the encoding path, not a fresh live capture-to-review run.
+
+Normal launch PID **4339** reached `PHYSIO_VIEWER_READY` and
+`PHYSIO_CONNECTION_READY` at **07:31:10 EDT** after the existing private launcher
+restored the automatic connection. The one-use configuration was consumed and
+deleted. Final proof is outside Git at
+`/Users/baderasadi/Library/Caches/HTH/hci-ui-deploy-032/`, including the Gradle log,
+APK comparison, before/after file hashes, synthetic metrics/pixels and startup log.
+
+Next: **start a new test and record fresh video**. Do not retry the known faulty
+`/1` recordings. No prerecorded recovery was performed. Keep the laptop, wireless
+ADB and SSH tunnel available; a full app restart needs session provisioning again.
+Source changes remain on `codex/hci-quest-ui`; the private service validation
+update and Quest 0.3.2 deployment are verified, while new live end-to-end inference
+and wearer acceptance remain to be tested.
+
+## Wireless route interruption (07:44 EDT)
+
+After a transient wireless ADB disconnect, its reverse forwarding list was empty.
+The app process still held its session credentials, but processing and connection
+checks could no longer reach Quest loopback 8443. The private service remained
+healthy and had accepted no new job; this was a transport failure before inference.
+Restoring `adb reverse tcp:8443 tcp:8443` immediately repaired the route. An
+authenticated read-only random-job lookup through Mac → Quest → ADB reverse →
+private HTTPS returned the expected `404 NOT_FOUND`; no upload or job was created.
+
+At the user's request the already-verified **0.3.2 / code 9** APK was reinstalled
+wirelessly, preserving all **348** current saved-file hashes. Existing session
+provisioning relaunched PID **8401**; `PHYSIO_VIEWER_READY` and
+`PHYSIO_CONNECTION_READY` appeared at **07:47:42 EDT**. No videos were recovered,
+rewritten or uploaded by this repair. The existing saved test can be retried.
+Evidence: `/Users/baderasadi/Library/Caches/HTH/incident-20260927-0744/`.
+
+The minimal Mac-side route keeper is
+`quest/Tools/keep_processing_connection.py --serial <headset-ip>:5555`.
+It checks every five seconds, reconnects only the named wireless endpoint when
+needed, and restores/validates just port 8443. Each ADB call has an eight-second
+timeout. It neither handles credentials nor restarts the app or submits jobs.
+The existing SSH tunnel and session provisioning remain in use.
+
+Tests were written before implementation: **15 passed**, **96%** scoped branch
+coverage, Ruff and whitespace checks clean. General, Python and security reviews
+found no functional/security blocker. The live `--once` check passed. Route keeper
+PID **42919** is running on the Mac and logged the verified mapping; its PID and
+log are in the incident evidence directory. This is a background helper
+started for this session, not a login or system-wide service. Stop it with
+`kill 42919` when the private demo route is no longer needed.
+
+## Descriptive classifications and local reruns (0.3.3)
+
+The user requested the fastest classification path for all three tests and reruns
+without rerecording. The private service's new Walking run had succeeded in
+**68.17 seconds** with **293 valid reconstructed source frames**. Its result had
+geometric observations but zero evaluated findings; the old cards consequently
+repeated “Limited evidence.” No trained, evaluated clinical classifier was
+installed. The selected implementation is a local descriptive classifier over
+the saved original replay, with no backend, model, dependency or schema change.
+
+- ELK describes anatomical peak lateral-bend direction; RTK describes unsigned
+  relative shoulder/pelvis rotation; Walking compares each knee's bending peak
+  and describes trunk inclination. Bilateral comparisons use common eligible
+  frames, retaining each leg's own exact source frame and time.
+- Opening a saved result calculates Patterns automatically. **Rerun
+  classifications** reuses the validated, unscaled replay locally, without
+  uploads, reconstruction, video edits or saved-result mutation. Original evidence
+  remains available through Details. Patient/session/result generation checks
+  prevent stale asynchronous results from appearing in another review.
+- Cards say “Pose estimate”; Details retain method/version and limitations.
+  These categories do not establish exercise correctness, gait diagnosis,
+  clinical confidence or treatment. Missing support remains unavailable.
+
+Tests were written before implementation: **76 pattern checks** passed, with
+**100% scoped line/branch/method coverage** of the pure classifier (160 lines,
+116 branches). This excludes Unity UI integration and clinical accuracy.
+**33 UI evidence checks** and **673 workflow checks** passed. General and C# reviews checked original data
+isolation, separate peak evidence moments, capture eligibility and rerun identity.
+Saved service observations remain available as an explicitly labelled fallback
+when local patterns are empty or unavailable. Error logs include operation and
+exception type only. Scoped security review and `pip-audit` found no blocker.
+
+The pre-existing SPEC 7.2 requirement for genuine, evaluated exercise-specific
+ELK/RTK findings is still incomplete. This descriptive update does not replace
+that requirement or turn the offline candidate into an installed clinical method.
+
+A private, read-only proof loaded the actual existing Walking reconstruction,
+checked all output frame/time bindings and deterministic reruns: three patterns,
+with separate original evidence moments for the two knee peaks. Calculation took
+**12.62 ms on the Mac**; this is not a Quest timing or clinical-accuracy measurement.
+Participant measurements are retained only in private proof, not this repository.
+No original video was retrieved.
+Proof and reconstruction remain outside Git at
+`/Users/baderasadi/Library/Caches/HTH/classification-033-proof/`.
+
+Unity **6000.0.66f2**, Meta Interaction SDK **85.0.0**, Android API 34/ARM64:
+`FixtureBuild.Build` exited 0 with `Build Finished, Result: Success`. Signed APK:
+**86,358,802 bytes**, SHA-256
+`9141decd3a17415f2a8ed6508bfdb9207382da6e4b43eeda19af20773af02f16`.
+Wireless `adb install -r` succeeded; installed **0.3.3 / code 10** and the installed
+APK hash match. All **423** saved app files matched before and after installation.
+No app data was cleared or video recovered/rewritten. The private session launcher
+reprovisioned the existing connection and consumed the one-use configuration.
+Startup PID **13406** logged `PHYSIO_VIEWER_READY` and `PHYSIO_CONNECTION_READY`
+at **08:14:30 EDT**, with no managed exception in the sampled log.
+
+Commands: the existing cached `dotnet run --project quest/Checks/PatternChecks.csproj`,
+`UIEvidenceChecks.csproj` and `WorkflowChecks.csproj`; Unity batch build with
+`-buildTarget Android -job-worker-count 2 -executeMethod FixtureBuild.Build`;
+`apksigner verify --verbose`; `aapt dump badging`; wireless `adb install -r`;
+device before/after SHA-256 checks; existing private launcher and PID-specific
+`adb logcat`. Build, APK, preservation and startup proof are outside Git at
+`/Users/baderasadi/Library/Caches/HTH/hci-ui-deploy-033/`. Unrelated generated
+scene-ID churn and TMP serialization changes were restored.
+
+Next wearer check: open an existing completed patient test → **Patterns** →
+**Rerun classifications** → **View moment**. This needs no new recording or
+processing-service connection. A test without completed reconstruction still
+uses the existing saved-capture processing flow. The full headset button flow
+has not yet been independently exercised; startup and actual saved geometry
+classification were verified separately.
 
 ## Mohammad's persistent inference experiment review
 

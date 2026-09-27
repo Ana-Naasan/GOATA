@@ -25,8 +25,8 @@ public static class HandReviewSceneBuilder
     private const string UiSet = Essentials + "Runtime/Sample/Objects/UISet/";
     private const string ButtonPath = UiSet + "Prefabs/Button/UnityUIButtonBased/PrimaryButton_IconAndLabel_UnityUIButton.prefab";
     private const string SecondaryButtonPath = UiSet + "Prefabs/Button/UnityUIButtonBased/SecondaryButton_IconAndLabel_UnityUIButton.prefab";
-    private const float PanelWidth = 640f;
-    private const float PanelHeight = 960f;
+    private const float PanelWidth = 700f;
+    private const float PanelHeight = 940f;
 
     public static void Configure(FixtureViewer viewer, OVRCameraRig rig)
     {
@@ -35,6 +35,16 @@ public static class HandReviewSceneBuilder
         EnsureUiSetTags();
         RemoveLegacyUi(viewer);
         var interactionRig = ConfigureInteractionRig(rig);
+        var passthrough = Object.FindFirstObjectByType<OVRPassthroughLayer>();
+        if (passthrough == null) throw new InvalidOperationException("Quest passthrough layer is required for capture and quiet-room switching.");
+        var earth = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/Physio/Art/Moon/earth-blue-marble.png");
+        GameObject MoonModel(string name) => AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Physio/Art/Moon/" + name + ".obj");
+        if (earth == null || MoonModel("platform_large") == null || MoonModel("rock") == null ||
+            MoonModel("craterLarge") == null || MoonModel("satelliteDish") == null)
+            throw new InvalidOperationException("The sourced Moon training assets are missing.");
+        viewer.gameObject.AddComponent<ReplayEnvironment>().Configure(rig.GetComponent<OVRManager>(),
+            passthrough, rig.centerEyeAnchor.GetComponent<Camera>(), rig.centerEyeAnchor, rig.trackingSpace,
+            earth, MoonModel("platform_large"), MoonModel("rock"), MoonModel("craterLarge"), MoonModel("satelliteDish"));
         var material = new SerializedObject(viewer).FindProperty("boneMaterial").objectReferenceValue as Material;
         if (material == null) throw new InvalidOperationException("Assign the viewer's bone material before configuring interaction.");
 
@@ -42,14 +52,20 @@ public static class HandReviewSceneBuilder
         var panel = CreatePanel(rig, material, viewer);
         var workflow = panel.GetComponent<WorkflowPanel>();
         var capture = CreateCaptureSurfaces(rig, material, workflow);
-        var handMenu = CreateHandMenu(rig, interactionRig, viewer, workflow);
+        var play = viewer.gameObject.AddComponent<ReplayPlayInteractions>();
+        var tomato = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Physio/Art/Tomato/Tomato.obj");
+        var splat = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/Physio/Art/Tomato/splat.png");
+        if (tomato == null || splat == null) throw new InvalidOperationException("Licensed tomato and splat assets are missing.");
+        play.Configure(viewer, FindChild(interactionRig, "LeftInteractions").GetComponent<Hand>(),
+            FindChild(interactionRig, "RightInteractions").GetComponent<Hand>(), rig.rightHandAnchor, tomato, splat);
+        var handMenu = CreateHandMenu(rig, interactionRig, viewer, workflow, play);
         SetReferences(workflow, ("captureOverlay", capture));
         SetReferences(viewer, ("replayDisplayRoot", display), ("replayPanel", panel),
             ("interactionRigRoot", interactionRig));
         var settings = new SerializedObject(viewer);
-        SetVector(settings, "viewerOffset", new Vector3(.42f, -.70f, 1.10f));
-        SetVector(settings, "panelOffset", new Vector3(-.46f, -.10f, 1.15f));
-        RequireProperty(settings, "initialDisplayScale").floatValue = .4f;
+        SetVector(settings, "viewerOffset", new Vector3(.55f, 0f, 1.65f));
+        SetVector(settings, "panelOffset", new Vector3(-.45f, -.15f, 1.50f));
+        RequireProperty(settings, "initialDisplayScale").floatValue = 1f;
         settings.ApplyModifiedPropertiesWithoutUndo();
         RecordPrefabOverrides(rig.gameObject);
         RecordPrefabOverrides(display.gameObject);
@@ -134,7 +150,7 @@ public static class HandReviewSceneBuilder
         var collider = display.gameObject.AddComponent<BoxCollider>();
         collider.center = new Vector3(0f, .9f, 0f);
         collider.size = new Vector3(1.1f, 1.9f, .65f);
-        AddGrabInteractions(display.gameObject, display, collider, allowScale: true);
+        AddGrabInteractions(display.gameObject, display, collider, allowScale: true, minimumScale: .2f, maximumScale: 1.2f);
 
         var leftHandle = CreateHandle(display, "Left replay grab handle", new Vector3(-.46f, .9f, -.35f),
             new Vector3(.11f, .36f, .11f), material);
@@ -143,8 +159,22 @@ public static class HandReviewSceneBuilder
         var grab = display.GetComponent<Grabbable>();
         AddRayGrabInteraction(leftHandle, leftHandle.GetComponent<Collider>(), grab);
         AddRayGrabInteraction(rightHandle, rightHandle.GetComponent<Collider>(), grab);
-        AddGrabFeedback(display.gameObject, leftHandle.GetComponent<Renderer>(), rightHandle.GetComponent<Renderer>());
+        AddGrabFeedback(display.gameObject, CompactGripVisual(leftHandle), CompactGripVisual(rightHandle));
         return display;
+    }
+
+    private static Renderer CompactGripVisual(GameObject handle)
+    {
+        // Preserve the generous native grab/ray collider while reducing visual obstruction.
+        var original = handle.GetComponent<Renderer>();
+        var visual = new GameObject("Compact grip visual", typeof(MeshFilter), typeof(MeshRenderer));
+        visual.transform.SetParent(handle.transform, false);
+        visual.transform.localScale = new Vector3(.45f, .28f, .45f);
+        visual.GetComponent<MeshFilter>().sharedMesh = handle.GetComponent<MeshFilter>().sharedMesh;
+        var renderer = visual.GetComponent<Renderer>();
+        renderer.sharedMaterial = original.sharedMaterial;
+        original.enabled = false;
+        return renderer;
     }
 
     private static HandReplayPanel CreatePanel(OVRCameraRig rig, Material material, FixtureViewer viewer)
@@ -169,7 +199,7 @@ public static class HandReviewSceneBuilder
         var content = new GameObject("Page content", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(LayoutElement));
         content.transform.SetParent(backplate, false);
         var contentLayout = content.GetComponent<VerticalLayoutGroup>();
-        contentLayout.spacing = 8f;
+        contentLayout.spacing = 12f;
         contentLayout.childControlHeight = contentLayout.childControlWidth = true;
         contentLayout.childForceExpandHeight = false;
         contentLayout.childForceExpandWidth = true;
@@ -177,8 +207,17 @@ public static class HandReviewSceneBuilder
         var reviewTabs = CreateRow(content.transform, "Review sections");
         var observationsTab = CreateButton(reviewTabs, "Observations");
         var assessmentTab = CreateButton(reviewTabs, "Assessment");
+        var previousObservations = CreateButton(reviewTabs, "Previous");
+        var nextObservations = CreateButton(reviewTabs, "Next");
         reviewTabs.gameObject.SetActive(false);
-        var body = CreateText(content.transform, "Page detail", "", 24f, 150f);
+        var scoreRoot = new GameObject("GoataScore", typeof(RectTransform), typeof(LayoutElement), typeof(GoataScoreGauge));
+        scoreRoot.transform.SetParent(content.transform, false);
+        SetLayout(scoreRoot, 112f);
+        var scoreGauge = scoreRoot.GetComponent<GoataScoreGauge>();
+        var scoreFont = LoadRequired<GameObject>(ButtonPath).GetComponentsInChildren<TMP_Text>(true).First();
+        scoreGauge.Configure(scoreFont.font, scoreFont.fontSharedMaterial);
+        scoreRoot.SetActive(false);
+        var body = CreateScrollableBody(content.transform, out var bodyScroll);
         body.overflowMode = TextOverflowModes.Overflow;
         var previews = new GameObject("Evidence previews", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(LayoutElement));
         previews.transform.SetParent(content.transform, false);
@@ -199,14 +238,21 @@ public static class HandReviewSceneBuilder
             ButtonLabel(list[i]).alignment = TextAlignmentOptions.MidlineLeft;
             ButtonLabel(list[i]).rectTransform.offsetMin = new Vector2(20f, 4f);
         }
+        var listPager = CreateRow(content.transform, "List pages");
+        var previousPage = CreateButton(listPager, "Previous");
+        var nextPage = CreateButton(listPager, "Next");
+        listPager.gameObject.SetActive(false);
 
-        var replayRoot = CreateSurface("Floating replay timeline", rig, 620f, 328f, out var replayContent);
+        var replayRoot = CreateSurface("Replay object controls", rig, 620f, 464f, out var replayContent);
+        replayContent.GetComponent<VerticalLayoutGroup>().spacing = 8f;
         // This surface stays outside the workspace visual hierarchy and is placed once when opened.
-        var title = CreateText(replayContent, "Replay title", "SOURCE REPLAY", 22f, 0f);
+        var title = CreateText(replayContent, "Replay title", "SOURCE REPLAY", 22f, 36f);
         title.gameObject.SetActive(false);
-        var replayStatus = CreateText(replayContent, "Replay provenance", "", 22f, 28f);
+        var replayStatus = CreateText(replayContent, "Replay provenance", "", 22f, 32f);
+        var time = CreateText(replayContent, "Source time", "00:00 / 00:00", 24f, 36f);
+        time.fontStyle = FontStyles.Bold;
         var sliderRoot = Instantiate(UiSet + "Prefabs/Slider/LargeSlider.prefab", replayContent);
-        SetLayout(sliderRoot, 48f);
+        SetLayout(sliderRoot, 40f);
         var slider = sliderRoot.GetComponentInChildren<Slider>(true);
         if (slider == null) throw new InvalidOperationException("Meta UI Set slider missing.");
         var intervalTrack = new GameObject("Selected source interval", typeof(RectTransform), typeof(LayoutElement));
@@ -216,48 +262,92 @@ public static class HandReviewSceneBuilder
         intervalRange.GetComponent<Image>().color = new Color(1f, .78f, .25f);
         intervalRange.GetComponent<Image>().raycastTarget = false;
         intervalRange.SetActive(false);
-        var evidenceLabel = CreateText(replayContent, "Selected evidence source", "", 20f, 24f);
+        var evidenceLabel = CreateText(replayContent, "Selected evidence source", "", 20f, 32f);
         evidenceLabel.color = new Color(1f, .86f, .5f);
-        var time = CreateText(replayContent, "Source time", "0.00s", 24f, 26f);
+        evidenceLabel.gameObject.SetActive(false);
         var playback = CreateRow(replayContent, "Playback");
         var previous = CreateButton(playback, "Frame −");
         var play = CreateButton(playback, "Play", primary: true);
         var next = CreateButton(playback, "Frame +");
-        var speed = CreateButton(playback, "Speed 1×");
+        var speed = CreateButton(playback, "Speed 1x");
+        var speedChoices = CreateRow(replayContent, "Speed choices");
+        var speedValues = new[] { "0.25×", "0.5×", "1×", "1.5×", "2×" };
+        var speedButtons = speedValues.Select(value => CreateButton(speedChoices, value)).ToArray();
+        speedChoices.gameObject.SetActive(false);
         var timing = CreateRow(replayContent, "Direction");
-        var reverse = CreateButton(timing, "Play backward");
+        var reverse = CreateButton(timing, "Forward");
         var restart = CreateButton(timing, "Restart");
+        var insights = CreateButton(timing, "Insights");
+        var playMode = CreateButton(timing, "Play mode");
+        var size = CreateRow(replayContent, "Hologram size and placement");
+        var smaller = CreateButton(size, "Size −");
+        var larger = CreateButton(size, "Size +");
+        var resetBody = CreateButton(size, "Reset body");
+        var environment = CreateButton(size, "Moon");
+        foreach (var button in replayContent.GetComponentsInChildren<Button>(true))
+        {
+            var label = ButtonLabel(button);
+            label.fontSize = 22f;
+            label.overflowMode = TextOverflowModes.Ellipsis;
+            label.enableWordWrapping = false;
+        }
         var replaySettings = new SerializedObject(panel);
         RequireProperty(replaySettings, "externalLayout").boolValue = true;
         replaySettings.ApplyModifiedPropertiesWithoutUndo();
-        var status = CreateText(backplate, "Operation status", "", 20f, 72f);
+        var status = CreateText(backplate, "Operation status", "", 20f, 64f);
         status.color = new Color(.72f, .87f, 1f);
         status.overflowMode = TextOverflowModes.Overflow;
         var actions = CreateRow(backplate, "Page actions");
         var primary = CreateButton(actions, "New patient", true);
         var secondary = CreateButton(actions, "Next");
-        var help = CreateText(backplate, "Placement help", "Drag the bar to move · Menu for options", 20f, 26f);
-        help.color = new Color(.72f, .79f, .87f);
-        FinishSurface(visuals, material, PanelHeight, root.transform);
-        FinishSurface(replayRoot, material, 328f);
+        FinishSurface(visuals, material, PanelHeight, root.transform, rig.centerEyeAnchor);
+        FinishSurface(replayRoot, material, 464f, head: rig.centerEyeAnchor, maximumHeight: 580f);
+        var track = slider.GetComponentsInChildren<Image>(true).FirstOrDefault(image => image.name == "Background");
+        if (track != null) track.color = new Color(.25f, .35f, .4f, 1f);
+        if (slider.fillRect != null && slider.fillRect.GetComponent<Image>() is Image fill)
+            fill.color = new Color(.15f, .72f, .9f, 1f);
+        if (slider.handleRect != null && slider.handleRect.GetComponent<Image>() is Image thumb)
+            thumb.color = Color.white;
+        var sliderColors = slider.colors;
+        sliderColors.normalColor = Color.white;
+        sliderColors.highlightedColor = new Color(.75f, .95f, 1f, 1f);
+        slider.colors = sliderColors;
         SetReferences(panel, ("playPauseButton", play), ("reverseButton", reverse),
             ("previousFrameButton", previous), ("nextFrameButton", next), ("restartButton", restart),
-            ("speedButton", speed), ("seekSlider", slider), ("titleLabel", title),
+            ("speedButton", speed), ("speedChoicesRoot", speedChoices.gameObject), ("insightsButton", insights),
+            ("environmentButton", environment), ("environmentLabel", ButtonLabel(environment)),
+            ("playModeButton", playMode), ("playModeLabel", ButtonLabel(playMode)),
+            ("scaleDownButton", smaller), ("scaleUpButton", larger), ("resetReplayButton", resetBody),
+            ("seekSlider", slider), ("titleLabel", title),
             ("statusLabel", replayStatus), ("timeLabel", time), ("evidenceLabel", evidenceLabel),
             ("evidenceRange", intervalRange.GetComponent<RectTransform>()), ("playPauseLabel", ButtonLabel(play)),
             ("reverseLabel", ButtonLabel(reverse)), ("speedLabel", ButtonLabel(speed)),
-            ("timelineRoot", replayRoot.transform), ("head", rig.centerEyeAnchor));
+            ("timelineRoot", replayRoot.transform), ("head", rig.centerEyeAnchor),
+            ("canvasRect", FindChild(replayRoot, "CanvasRoot").GetComponent<RectTransform>()),
+            ("backplateRect", replayContent), ("panelGrabHandle", FindChild(replayRoot, "Drag to move")));
         SetReferences(workflow, ("viewer", viewer), ("heading", heading), ("context", context), ("body", body),
+            ("bodyScroll", bodyScroll),
+            ("goataScoreGauge", scoreGauge),
             ("status", status), ("back", back), ("options", options), ("primary", primary),
             ("secondary", secondary), ("replayControls", replayRoot), ("preview", original),
             ("amplifiedPreview", amplified), ("previewRoot", previews), ("previewCaption", previewCaption),
-            ("workspaceVisuals", visuals), ("reviewTabs", reviewTabs.gameObject),
-            ("observationsTab", observationsTab), ("assessmentTab", assessmentTab));
+            ("workspaceVisuals", visuals), ("listPager", listPager.gameObject),
+            ("previousPage", previousPage), ("nextPage", nextPage), ("reviewTabs", reviewTabs.gameObject),
+            ("observationsTab", observationsTab), ("assessmentTab", assessmentTab),
+            ("previousObservations", previousObservations), ("nextObservations", nextObservations),
+            ("workspaceCanvas", FindChild(visuals, "CanvasRoot").GetComponent<RectTransform>()),
+            ("workspaceBackplate", backplate), ("workspaceHandle", FindChild(visuals, "Drag to move")));
         var workflowSettings = new SerializedObject(workflow);
         var rowProperty = RequireProperty(workflowSettings, "rows");
         rowProperty.arraySize = list.Length;
         for (var i = 0; i < list.Length; i++) rowProperty.GetArrayElementAtIndex(i).objectReferenceValue = list[i];
         workflowSettings.ApplyModifiedPropertiesWithoutUndo();
+        var speedSettings = new SerializedObject(panel);
+        var speedProperty = RequireProperty(speedSettings, "speedChoices");
+        speedProperty.arraySize = speedButtons.Length;
+        for (var index = 0; index < speedButtons.Length; index++)
+            speedProperty.GetArrayElementAtIndex(index).objectReferenceValue = speedButtons[index];
+        speedSettings.ApplyModifiedPropertiesWithoutUndo();
         LayoutRebuilder.ForceRebuildLayoutImmediate(backplate);
         RecordPrefabOverrides(replayRoot);
         return panel;
@@ -267,11 +357,28 @@ public static class HandReviewSceneBuilder
     {
         var root = new GameObject("Spatial Capture Controls");
         var overlay = root.AddComponent<SpatialCaptureOverlay>();
-        var guidance = CreateSurface("Capture guidance — drag to place beside the patient", rig, 540f, 344f, out var content);
+        var guidance = CreateSurface("Capture controls — drag to place beside the patient", rig, 540f, 588f, out var content);
         guidance.transform.SetParent(root.transform, false);
         var context = CreateText(content, "Capture test and duration", "SAME MOVEMENT · EACH VIEW", 22f, 52f);
         context.overflowMode = TextOverflowModes.Overflow;
         context.color = new Color(.72f, .83f, .9f);
+        var movementButton = CreateButton(content, "How the movement looks ▾");
+        var movementExample = new GameObject("Movement example", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(LayoutElement));
+        movementExample.transform.SetParent(content, false);
+        SetLayout(movementExample, 228f);
+        var exampleLayout = movementExample.GetComponent<VerticalLayoutGroup>();
+        exampleLayout.spacing = 8f;
+        exampleLayout.childControlHeight = true;
+        exampleLayout.childForceExpandHeight = false;
+        var diagram = new GameObject("Animated movement diagram", typeof(RectTransform), typeof(Image), typeof(LayoutElement));
+        diagram.transform.SetParent(movementExample.transform, false);
+        SetLayout(diagram, 148f);
+        diagram.GetComponent<Image>().color = new Color(.035f, .08f, .13f, 1f);
+        var exampleCaption = CreateText(movementExample.transform, "Movement description", "", 19f, 70f);
+        exampleCaption.overflowMode = TextOverflowModes.Overflow;
+        var example = movementExample.AddComponent<MovementExample>();
+        example.Configure(diagram.GetComponent<RectTransform>(), exampleCaption);
+        movementExample.SetActive(false);
         var title = CreateText(content, "Patient position instruction", "Start at the patient's RIGHT side", 28f, 56f);
         title.fontStyle = FontStyles.Bold;
         title.overflowMode = TextOverflowModes.Overflow;
@@ -279,29 +386,42 @@ public static class HandReviewSceneBuilder
         steps.color = new Color(.48f, .87f, 1f);
         var status = CreateText(content, "Capture state", "Confirm your position before recording.", 23f, 72f);
         status.overflowMode = TextOverflowModes.Overflow;
+        var cameraPreview = CreatePreview(content, "Recorded camera view");
+        var previewFrame = cameraPreview.transform.parent.gameObject;
+        SetLayout(previewFrame, 260f);
+        var previewBackground = previewFrame.AddComponent<Image>();
+        previewBackground.color = new Color(.04f, .08f, .12f, 1f);
+        previewBackground.raycastTarget = false;
+        var cameraPreviewCaption = CreateText(content, "Camera preview caption", "Camera preview opens before recording", 19f, 28f);
+        cameraPreviewCaption.color = new Color(.72f, .87f, 1f);
+        previewFrame.SetActive(false);
+        cameraPreviewCaption.gameObject.SetActive(false);
         var actions = CreateRow(content, "Capture navigation");
         var retake = CreateButton(actions, "Retake last view");
-        var workspace = CreateButton(actions, "Options");
-        AddButtonIcon(workspace, "settings.png");
+        var returnButton = CreateButton(actions, "Patient history");
+        foreach (var button in new[] { retake, returnButton }) ButtonLabel(button).fontSize = 20f;
 
-        var dock = CreateSurface("Floating record control", rig, 360f, 138f, out var dockContent);
-        dock.transform.SetParent(root.transform, false);
-        var recordTime = CreateText(dockContent, "Capture elapsed and duration", "READY · 10 SECOND TAKE", 22f, 28f);
+        var recordTime = CreateText(content, "Capture elapsed and duration", "READY · 10 SECOND TAKE", 22f, 28f);
         recordTime.alignment = TextAlignmentOptions.Center;
         recordTime.color = new Color(.72f, .87f, 1f);
-        var record = CreateButton(dockContent, "Record right", true);
+        var record = CreateButton(content, "Record right", true);
         ButtonLabel(record).fontSize = 28f;
-        FinishSurface(guidance, material, 344f);
-        FinishSurface(dock, material, 138f);
+        FinishSurface(guidance, material, 588f, head: rig.centerEyeAnchor, maximumHeight: 888f);
         SetReferences(overlay, ("workflow", workflow), ("head", rig.centerEyeAnchor),
             ("guidanceRoot", guidance), ("guidanceTitle", title), ("guidanceContext", context),
-            ("guidanceSteps", steps), ("guidanceStatus", status), ("recordDock", dock),
+            ("guidanceSteps", steps), ("guidanceStatus", status),
+            ("movementButton", movementButton), ("movementButtonLabel", ButtonLabel(movementButton)),
+            ("movementExampleRoot", movementExample), ("movementExample", example),
+            ("cameraPreview", cameraPreview), ("cameraPreviewFrame", previewFrame), ("cameraPreviewCaption", cameraPreviewCaption),
+            ("guidanceCanvas", FindChild(guidance, "CanvasRoot").GetComponent<RectTransform>()),
+            ("guidanceBackplate", content), ("guidanceHandle", FindChild(guidance, "Drag to move")),
             ("recordButton", record), ("recordLabel", ButtonLabel(record)), ("recordTime", recordTime),
-            ("retakeButton", retake), ("workspaceButton", workspace));
+            ("retakeButton", retake), ("retakeLabel", ButtonLabel(retake)), ("returnButton", returnButton));
         return overlay;
     }
 
-    private static HandSpatialMenu CreateHandMenu(OVRCameraRig rig, GameObject interaction, FixtureViewer viewer, WorkflowPanel workflow)
+    private static HandSpatialMenu CreateHandMenu(OVRCameraRig rig, GameObject interaction, FixtureViewer viewer,
+        WorkflowPanel workflow, ReplayPlayInteractions play)
     {
         var root = new GameObject("Hand shortcuts");
         var menu = root.AddComponent<HandSpatialMenu>();
@@ -330,15 +450,15 @@ public static class HandReviewSceneBuilder
         launcher.transform.SetParent(handVisuals.transform, false);
         launcher.transform.localScale = Vector3.one * .5f;
         var launcherButton = CreateButton(launcherContent, "Menu", true);
-        var shelf = CreateSurface("Hand shortcut shelf", rig, 440f, 108f, out var shelfContent);
-        shelf.transform.SetParent(handVisuals.transform, false);
-        shelf.transform.localPosition = new Vector3(0, -.074f, 0);
-        shelf.transform.localScale = Vector3.one * .5f;
+        var shelf = CreateSurface("Stationary shortcut menu", rig, 700f, 108f, out var shelfContent);
+        shelf.transform.SetParent(root.transform, false);
         var buttons = CreateRow(shelfContent, "Hand actions");
         var capture = CreateButton(buttons, "Capture");
         var replay = CreateButton(buttons, "Insights");
         var options = CreateButton(buttons, "Options");
-        foreach (var button in new[] { capture, replay, options }) ButtonLabel(button).fontSize = 22f;
+        var tomato = CreateButton(buttons, "Tomato");
+        var close = CreateButton(buttons, "Close");
+        foreach (var button in new[] { capture, replay, options, tomato, close }) ButtonLabel(button).fontSize = 22f;
         AddButtonIcon(replay, "play.png");
         AddButtonIcon(options, "settings.png");
         launcher.GetComponent<UIThemeManager>().ApplyCurrentTheme();
@@ -347,7 +467,9 @@ public static class HandReviewSceneBuilder
         LayoutRebuilder.ForceRebuildLayoutImmediate(shelfContent);
         SetReferences(menu, ("viewer", viewer), ("workflow", workflow), ("handRoot", handVisuals),
             ("launcherButton", launcherButton), ("shelf", shelf), ("captureButton", capture),
-            ("replayButton", replay), ("optionsButton", options), ("hand", hand), ("head", rig.centerEyeAnchor));
+            ("replayButton", replay), ("optionsButton", options), ("tomatoButton", tomato),
+            ("play", play), ("closeButton", close),
+            ("hand", hand), ("head", rig.centerEyeAnchor));
         shelf.SetActive(false);
         handVisuals.SetActive(false);
         return menu;
@@ -368,7 +490,7 @@ public static class HandReviewSceneBuilder
         backplate.sizeDelta = new Vector2(width, height);
         var layout = backplate.GetComponent<VerticalLayoutGroup>();
         layout.padding = new RectOffset(16, 16, 16, 16);
-        layout.spacing = 8f;
+        layout.spacing = 12f;
         layout.childControlHeight = layout.childControlWidth = true;
         layout.childForceExpandHeight = false;
         layout.childForceExpandWidth = true;
@@ -376,12 +498,16 @@ public static class HandReviewSceneBuilder
         return root;
     }
 
-    private static void FinishSurface(GameObject root, Material material, float height, Transform target = null)
+    private static void FinishSurface(GameObject root, Material material, float height, Transform target = null,
+        Transform head = null, float maximumHeight = 0f)
     {
         root.GetComponent<UIThemeManager>().ApplyCurrentTheme();
         var handle = CreateHandle(root.transform, "Drag to move", new Vector3(0, -height * .0005f - .022f, -.018f),
-            new Vector3(.18f, .025f, .04f), material);
-        AddGrabInteractions(handle, target != null ? target : root.transform, handle.GetComponent<Collider>(), allowScale: false);
+            new Vector3(.035f, .16f, .035f), material, horizontal: true);
+        AddGrabInteractions(handle, target != null ? target : root.transform, handle.GetComponent<Collider>(),
+            allowScale: true, minimumScale: .8f, maximumScale: 1.4f);
+        handle.AddComponent<PanelGrabBoundary>().Initialize(target != null ? target : root.transform,
+            head, handle.GetComponent<Grabbable>(), Mathf.Max(height, maximumHeight) * .001f);
         AddGrabFeedback(handle, handle.GetComponent<Renderer>());
         LayoutRebuilder.ForceRebuildLayoutImmediate(FindChild(root, "UIBackplate").GetComponent<RectTransform>());
     }
@@ -417,7 +543,8 @@ public static class HandReviewSceneBuilder
         return image;
     }
 
-    private static void AddGrabInteractions(GameObject source, Transform target, Collider collider, bool allowScale)
+    private static void AddGrabInteractions(GameObject source, Transform target, Collider collider, bool allowScale,
+        float minimumScale = .5f, float maximumScale = 3f)
     {
         var body = source.AddComponent<Rigidbody>();
         body.isKinematic = true;
@@ -428,12 +555,19 @@ public static class HandReviewSceneBuilder
         grab.InjectOptionalRigidbody(body);
         grab.InjectOptionalThrowWhenUnselected(false);
         var transformer = source.AddComponent<GrabFreeTransformer>();
+        var upright = new TransformerUtils.ConstrainedAxis
+        {
+            ConstrainAxis = true,
+            AxisRange = new TransformerUtils.FloatRange { Min = 0f, Max = 0f }
+        };
+        transformer.InjectOptionalRotationConstraints(new TransformerUtils.RotationConstraints
+            { XAxis = upright, YAxis = new TransformerUtils.ConstrainedAxis(), ZAxis = upright });
         if (allowScale)
         {
             var axis = new TransformerUtils.ConstrainedAxis
             {
                 ConstrainAxis = true,
-                AxisRange = new TransformerUtils.FloatRange { Min = .5f, Max = 3f }
+                AxisRange = new TransformerUtils.FloatRange { Min = minimumScale, Max = maximumScale }
             };
             transformer.InjectOptionalScaleConstraints(new TransformerUtils.ScaleConstraints
                 { ConstraintsAreRelative = true, XAxis = axis, YAxis = axis, ZAxis = axis });
@@ -474,18 +608,72 @@ public static class HandReviewSceneBuilder
         visual.InjectAllInteractableColorVisual(group, materialProperties);
         visual.InjectOptionalNormalColorState(new InteractableColorVisual.ColorState { Color = new Color(.3f, .95f, 1f) });
         visual.InjectOptionalHoverColorState(new InteractableColorVisual.ColorState { Color = Color.white });
-        visual.InjectOptionalSelectColorState(new InteractableColorVisual.ColorState { Color = new Color(.55f, 1f, .72f) });
+        visual.InjectOptionalSelectColorState(new InteractableColorVisual.ColorState { Color = new Color(.48f, .87f, 1f) });
     }
 
-    private static GameObject CreateHandle(Transform parent, string name, Vector3 position, Vector3 scale, Material material)
+    private static GameObject CreateHandle(Transform parent, string name, Vector3 position, Vector3 scale, Material material,
+        bool horizontal = false)
     {
-        var handle = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        var handle = GameObject.CreatePrimitive(PrimitiveType.Capsule);
         handle.name = name;
         handle.transform.SetParent(parent, false);
         handle.transform.localPosition = position;
+        if (horizontal) handle.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
         handle.transform.localScale = scale;
         handle.GetComponent<Renderer>().sharedMaterial = material;
         return handle;
+    }
+
+    private static TMP_Text CreateScrollableBody(Transform parent, out ScrollRect scroll)
+    {
+        var root = new GameObject("Scrollable conclusions", typeof(RectTransform), typeof(Image), typeof(ScrollRect), typeof(LayoutElement));
+        root.transform.SetParent(parent, false);
+        root.GetComponent<Image>().color = Color.clear;
+        SetLayout(root, 150f);
+        scroll = root.GetComponent<ScrollRect>();
+        scroll.horizontal = false;
+        scroll.vertical = true;
+        scroll.inertia = false;
+        scroll.movementType = ScrollRect.MovementType.Clamped;
+        scroll.scrollSensitivity = 24f;
+
+        var viewport = new GameObject("Conclusion viewport", typeof(RectTransform), typeof(Image), typeof(RectMask2D));
+        viewport.transform.SetParent(root.transform, false);
+        viewport.GetComponent<Image>().color = Color.clear;
+        var viewportRect = viewport.GetComponent<RectTransform>();
+        viewportRect.anchorMin = Vector2.zero; viewportRect.anchorMax = Vector2.one;
+        viewportRect.offsetMin = Vector2.zero; viewportRect.offsetMax = new Vector2(-32f, 0f);
+        var text = CreateText(viewport.transform, "Page detail", "", 24f, 150f);
+        Object.DestroyImmediate(text.GetComponent<LayoutElement>());
+        var textRect = text.rectTransform;
+        textRect.anchorMin = new Vector2(0f, 1f); textRect.anchorMax = Vector2.one;
+        textRect.pivot = new Vector2(0f, 1f);
+        textRect.anchoredPosition = Vector2.zero; textRect.sizeDelta = Vector2.zero;
+        var fitter = text.gameObject.AddComponent<ContentSizeFitter>();
+        fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+        fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        scroll.content = textRect;
+        scroll.viewport = viewportRect;
+
+        var barRoot = new GameObject("Conclusion scrollbar", typeof(RectTransform), typeof(Image), typeof(Scrollbar));
+        barRoot.transform.SetParent(root.transform, false);
+        var barRect = barRoot.GetComponent<RectTransform>();
+        barRect.anchorMin = new Vector2(1f, 0f); barRect.anchorMax = Vector2.one;
+        barRect.pivot = new Vector2(1f, .5f); barRect.anchoredPosition = Vector2.zero;
+        barRect.sizeDelta = new Vector2(24f, 0f);
+        barRoot.GetComponent<Image>().color = new Color(.13f, .22f, .28f, 1f);
+        var handle = new GameObject("Scroll thumb", typeof(RectTransform), typeof(Image));
+        handle.transform.SetParent(barRoot.transform, false);
+        var handleRect = handle.GetComponent<RectTransform>();
+        handleRect.anchorMin = Vector2.zero; handleRect.anchorMax = Vector2.one;
+        handleRect.offsetMin = new Vector2(3f, 3f); handleRect.offsetMax = new Vector2(-3f, -3f);
+        handle.GetComponent<Image>().color = new Color(.65f, .85f, .95f, 1f);
+        var bar = barRoot.GetComponent<Scrollbar>();
+        bar.handleRect = handleRect; bar.targetGraphic = handle.GetComponent<Image>();
+        bar.direction = Scrollbar.Direction.BottomToTop;
+        scroll.verticalScrollbar = bar;
+        scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
+        return text;
     }
 
     private static Transform CreateRow(Transform parent, string name)
@@ -493,12 +681,12 @@ public static class HandReviewSceneBuilder
         var row = new GameObject(name, typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
         row.transform.SetParent(parent, false);
         var layout = row.GetComponent<HorizontalLayoutGroup>();
-        layout.spacing = 8f;
+        layout.spacing = 12f;
         layout.childControlWidth = true;
         layout.childControlHeight = true;
         layout.childForceExpandWidth = true;
         layout.childForceExpandHeight = true;
-        SetLayout(row, 56f);
+        SetLayout(row, 68f);
         return row.transform;
     }
 
@@ -516,7 +704,7 @@ public static class HandReviewSceneBuilder
         foreach (var child in root.GetComponentsInChildren<Transform>(true))
             if (child.name == "Subtitle" || child.name == "Icon" || child.name == "Gap") child.gameObject.SetActive(false);
         ExpandButtonLabel(button, label);
-        SetLayout(root, 56f);
+        SetLayout(root, 68f);
         return button;
     }
 

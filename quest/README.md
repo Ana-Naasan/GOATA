@@ -1,18 +1,19 @@
 # Quest app
 
-**Last updated:** September 27, 2026. Walking review and estimated observations
-are implemented on `codex/walking-insights`, based on `main` at `3bad1a7` (PR #11).
-`docs/HANDOFF.md` records the current build and device proof. The previous capture
-build recorded all 90 synthetic frames at 30 fps on two cold launches; this does
-not verify real-camera recording. Wearer acceptance and clinical evaluation remain
-incomplete.
+**Last updated:** September 27, 2026. The UI redesign with restored automatic
+connection setup and corrected camera encoding is version **0.3.3 / code 10**
+on `codex/hci-quest-ui`, based on `main` at `1a9f9e3`. It uses one main workspace,
+a compact replay HUD, bounded movable panels, explicit camera framing/countdown,
+visual movement examples, grounded replay, anatomical evidence highlights and an
+optional Moon environment with Play mode. `docs/HANDOFF.md` records current build
+and installation evidence. Wearer acceptance and clinical evaluation remain
+incomplete; automated checks and startup logs do not establish physical usability.
 
-The September 27 insights APK built and installed on Quest 3; installed SHA-256:
-`91920fa27f6f3d860b3bdd4a67e519b46c1543fb771b8ea687c7326c2131f3b9`.
-The headset contains an isolated **PUBLIC DEMO - WALKING** saved result from a
-fresh public-video GPU run. It is a fixture with adapted capture metadata, not a
-participant assessment. The app still needs a configured authenticated processing
-service for new captures; device UI/video-seek acceptance remains pending.
+Walking review and estimated observations remain available alongside ELK/RTK and
+historical barefoot sessions. **PUBLIC DEMO - WALKING** is a fixture with adapted
+capture metadata, not a participant assessment. New captures still require a
+configured authenticated processing service. No service deployment is implied by
+installing this client APK.
 
 ## Open and build
 
@@ -67,6 +68,8 @@ focus and valid tracked position/orientation instead of using an untracked pose.
   first saved view. Guidance and a separate Record control float beside the
   participant; the workspace hides during capture. Permission, countdown,
   automatic completion, stop, interruption and retry are explicit states.
+  Adapter `85.0.0/2` writes the verified upright row order. Older `/1` recordings
+  from the faulty encoder remain saved, but require a new test for processing.
 - **Saved views:** each performance stays separate with immutable originals and
   retakes. Progress and selected takes recover after restart/crash. Choose one
   ELK/RTK/Walking take for 3D replay after all four views are saved. Other views remain
@@ -78,9 +81,13 @@ focus and valid tracked position/orientation instead of using an untracked pose.
 - **Historical barefoot capture:** four standing close-ups around one selected foot, with
   anatomical side fixed after the first saved view. No body replay is produced.
   This collection sequence is not a clinically validated foot protocol.
-- **Processing:** enter the HTTPS service URL and token through Options/system
-  keyboard. The token stays in memory; enter it again after app restart. The URL
-  is saved. Processing reports actual stages, retry errors and unavailable methods.
+- **Processing:** the private deployment launcher supplies the service address,
+  token and optional TLS certificate fingerprint before launch. The app consumes
+  and deletes the setup file, then checks authentication in the background.
+  Credentials stay in memory for that app session; a full restart requires the
+  launcher to provision them again. Manual setup and a connection check remain
+  under Options. Only a manually entered URL is saved in preferences. Processing
+  reports actual stages, retry errors and unavailable methods.
 - **Review:** play/pause, full timeline, reverse, frame steps, restart and
   0.25×/0.5×/1×/1.5×/2× speed. Body and skeleton share one display transform;
   moving/resizing them never changes stored measurements.
@@ -109,6 +116,61 @@ Capture publication and cached results validate identities, sizes and hashes;
 accepted-upload retries retain the idempotency key. Original captures remain
 immutable. Heavy file, network, JSON and importer work runs outside Unity's
 main thread; scene changes and mesh binding run on the main thread.
+
+### Descriptive classifications and reruns
+
+Saved ELK, RTK and Walking replays open with locally calculated **Patterns**.
+These describe peak lateral-bend direction, shoulder-to-pelvis rotation, and
+left/right knee-bending peak comparisons plus trunk inclination. They remain
+estimates from reconstructed pose; they do not label clinical correctness or
+diagnose gait. Open Details for the exact method and limitations, or View moment
+for the original source-linked replay position.
+
+**Rerun classifications** uses the saved, unscaled 3D replay entirely on-device.
+No new recording, upload or GPU reconstruction is needed. The current local method
+also runs when reopening older saved results with usable replay geometry. Original
+recordings and saved result versions are unchanged; display resizing and playback
+do not affect analysis. If a test has no completed replay yet, use Process / retry
+on its saved capture first.
+
+### Private processing connection
+
+Runtime provisioning uses `processing-connection.json` in the app's persistent
+data directory, with `endpoint`, `bearer_token` and optional `tls_leaf_sha256`.
+Keep this file and its real values outside Git. It is bounded to 16 KiB and
+deleted after a load attempt. The optional fingerprint pins a private server's
+leaf certificate; hostname and validity checks remain enforced. Without it,
+normal HTTPS certificate trust applies. Redirects are disabled.
+
+The current private route is Quest loopback port 8443 → wireless ADB reverse →
+Mac loopback port 8443 → the existing SSH tunnel → GPU service. Keep the laptop,
+wireless ADB connection and tunnel available. The startup check is an
+authenticated lookup of a random nonexistent job; it uploads no recording and
+starts no inference. It leaves local recording controls usable while offline.
+An authenticated connection does not establish GPU/model readiness.
+
+Wireless ADB reconnects can erase reverse forwarding. While using this private
+route, run the local repair helper alongside the existing SSH tunnel:
+
+```sh
+python3 quest/Tools/keep_processing_connection.py --serial <headset-ip>:5555
+```
+
+It checks the route every five seconds, reconnects the named headset when needed,
+and restores only `tcp:8443` forwarding. `--once` checks/repairs once; Ctrl-C stops
+the loop. It does not read credentials, restart the app, upload recordings or
+submit processing. Keep the Mac awake. A full app restart still needs the existing
+private session-provisioning launcher.
+
+### Check camera encoding orientation
+
+For a development build, launch with Android intent boolean
+`physio_capture_benchmark=true`. This records an asymmetric synthetic texture
+through the same GPU readback and MP4 encoder without opening the camera.
+Pull the new MP4 from the app cache's `synthetic-capture-benchmark` directory and
+run `python3 quest/Checks/check_capture_orientation.py /path/to/synthetic.mp4`.
+The independent pixel check requires blue above red and the green stripe on
+the left. A codec round trip alone does not establish correct orientation.
 
 The first-display timing is recorded after an end-of-frame boundary, including
 loading/binding. Continuous sessions use a monotonic interval from the final

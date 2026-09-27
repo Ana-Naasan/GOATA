@@ -154,15 +154,19 @@ macOS can build an Android APK when Unity Android Build Support, SDK/NDK and Ope
 
 Use Meta Horizon OS UI Set through Interaction SDK Essentials. Start with `UISetPatterns` or `UISetExamples`; preserve its backplates, themes and interaction feedback. Use supplied buttons, sliders, toggles, dropdowns, text inputs and dialogs. Enable the system keyboard for patient names.
 
-The approved spatial layout uses full room passthrough during capture. A compact guidance card sits beside the participant, with the current patient-relative viewpoint, take duration and progress. A separate floating Record/Stop dock remains accessible. The patient is viewed directly in the room; a small camera preview is not the primary capture surface. Camera framing guidance must reflect the actual recorded field of view; the camera does not record everything visible through passthrough.
+The approved spatial layout uses full room passthrough during capture. One compact guidance card sits beside the participant, with the current patient-relative viewpoint, take duration, progress and Record/Stop action. Open the actual camera preview first, then explicitly start the three-second countdown. Retain a smaller preview during recording. A collapsible animated movement example supports ELK, RTK and Walking preparation; hide it during framing/recording and for supplemental microscope steady holds. The patient remains visible directly in the room. Camera framing guidance must reflect the actual recorded field of view; the camera does not record everything visible through passthrough.
 
-Keep patient/history/options and finding details in a movable panel opened when needed. During replay, place an independent movable timeline beneath the blue body. Use a visible Back action, patient/test context and an Options button. Keep one finding expanded. Keep text readable against both bright and dark passthrough backgrounds.
+Use one main workspace for patient/history/options and finding details, with a compact replay HUD beside and below the blue body. Use a visible Back action, patient/test context and an Options button. Keep one finding expanded, with source-linked anatomical highlighting on the body. Use coherent neutral surfaces, blue actions and an amber evidence highlight. Keep text readable against both bright and dark passthrough backgrounds. Panels remain world-stable after placement; handle dragging and uniform resizing must not shear or stretch their components or bring them into the near-face zone.
 
 Provide an optional hand shortcut shelf near the wrist/index base using the native hand anchor and UI Set controls. A deliberate palm reveal exposes Capture, Replay and Options. Revealing the shelf never starts recording. Hide it when tracking or input focus is invalid, and retain equivalent floating controls for one-hand/controller use. Quest 3 has no eye tracking; do not describe head-direction checks as measured eye gaze.
 
 Use the supplied ray/poke canvas integration and hand/controller rig. C# application methods respond to UI events; do not reimplement pointer targeting or gesture recognition. Keep hand and controller paths equivalent for required controls.
 
 Initial panel placement is approximately one metre away for indirect interaction; allow repositioning. Follow current Meta guidance for near touch versus ray use, angular target size, spacing and reach, then test on-device. Do not treat browser CSS pixels as spatial measurements. Keep layout stable during hover. Navigation, recording controls and replay must work seated with one controller or one hand; obtaining other capture viewpoints remains part of the protocol.
+
+Spawn replay at 1x reconstructed source scale with the first observed surface grounded; provide minus/plus size controls and a reset. This preserves model scale, not a claim of measured participant height. Display scaling and presentation effects must not alter source geometry, analysis or evidence.
+
+The replay HUD can switch between passthrough and a stationary open-air Moon training facility with Earth in the background. Return to passthrough before any participant capture and block capture until passthrough reports resumed. Optional Play mode, off by default and excluded while a clinical finding is selected, permits a presentation-only head nudge and a throwable tomato with a brief splat. Current collisions cover the hologram and virtual Moon surfaces; physical-room wall collision remains incomplete. These effects are not clinical evidence and must never modify stored measurements or recordings.
 
 ### 5.3 Options menu
 
@@ -211,6 +215,14 @@ Input validation, recorded job states, model execution, test-specific analysis, 
 Use application-private Quest storage for local sessions and a configured private service directory for job files. Save metadata atomically and keep result versions immutable. A single service process with a lock is sufficient; record its one-worker limit and revisit only if simultaneous users become a requirement.
 
 Remote compute must have explicit access/cost authorization. The repository request does not authorize paid jobs or participant upload. Verify how Quest reaches the service over the actual network. Use TLS for remote access and a deployment token entered/configured at runtime; never compile a secret into the app or put it in Git. Do not expose an unauthenticated public GPU endpoint.
+
+The private deployment may provision a one-use `processing-connection.json`
+containing the HTTPS origin, token and optional SHA-256 TLS leaf fingerprint.
+The client deletes the file after reading, retains credentials only for the app
+session and checks authentication without uploading media or blocking local
+capture. A full app restart requires reprovisioning. Explicit leaf pinning
+preserves hostname/validity checks; normal HTTPS trust applies without a pin.
+The current laptop-assisted route uses wireless ADB reverse and an SSH tunnel.
 
 ## 7. Models, analysis and evidence
 
@@ -265,6 +277,26 @@ Result version 1.1 carries `observations` separately from evaluated `findings`, 
 
 Each reported extreme points to its actual original frame/time. Reconstructed finite joints do not establish joint visibility. Report the estimates as limited evidence, retain method/version and limitations, and omit quantities with invalid or degenerate required geometry. Numerical tests must cover source binding, gaps, missing landmarks, reflection, heading, translation, scaling and angle wrapping. Preserve historical result 1.0 readers, and release the updated Quest client before enabling result 1.1 on a service.
 
+The September 27 fast classification request adds **local descriptive movement
+patterns** for ELK, RTK and Walking. Derive them from the selected saved replay's
+original, validated joints. ELK names the anatomical direction of sampled peak
+lateral bend; RTK describes unsigned shoulder-to-pelvis rotation at displayed
+precision; Walking compares sampled knee-bending peaks using the same eligible
+source frames, with each leg retaining its own evidence moment. These categories
+are geometric descriptions, not correct/incorrect form, gait diagnoses or clinical
+findings. Equal or zero values refer explicitly to 0.1-degree display precision.
+Missing support stays unavailable, not a normal result.
+
+Opening a saved result recalculates patterns with the installed local method.
+A visible **Rerun classifications** action repeats that calculation from retained,
+unscaled replay data, without uploading, reconstructing, changing the saved result
+or rerecording. Playback, display scale and Play effects cannot affect the inputs.
+Keep local pattern/method objects separate from immutable service manifests and
+retain their method/version and research limitations in Details. Historical saved
+results with usable replay geometry are eligible; no result schema change is
+required. A recording without a completed reconstruction still uses the existing
+processing flow. Full reprocessing of saved recordings remains a separate action.
+
 Do not add step counts/cadence until a step-event detector is verified against labelled source video. Physical speed, stride length and other distance measures need calibration and reference comparison. Gait diagnoses, injury risk and treatment advice are outside this implementation.
 
 ### 7.3.1 Historical foot analysis
@@ -274,6 +306,28 @@ Select a method whose documented input conditions and output match what we can c
 For the chosen method, record the exact output, required views, units/calibration, reference comparison and known failure conditions. Test it against appropriate reference measurements or labels. A static standing result stays labelled standing; it is not a statement about arch behaviour during walking or a torso exercise.
 
 `processing/analysis/foot/` computes geometry from manual anatomical annotations. It has no automated landmark extraction or reference validation. Preserve the unavailable status and capture/evidence workflow for saved foot sessions. The user explicitly replaced this new-test requirement with Walking review on September 27, 2026; historical compatibility does not complete automated foot assessment.
+
+### 7.3a Goata Score demo rules
+
+The September 27 user-approved Goata Score is a local deterministic demo rating,
+separate from evaluated clinical findings. Start at 100 and subtract each
+category's severity (0–1) multiplied by its effective weight. Use two equal
+base weights of 50: Walking compares knee-bending peaks and upper-body tilt;
+ELK measures shoulder/hip twist and fore/aft tilt; RTK measures sideways and
+fore/aft tilt. Do not penalize ELK's intended side bend or RTK's intended twist.
+Full severity is reached at 20 degrees for knee-peak difference and 30 degrees
+for the other categories. These are explicit configurable app demo scales,
+not learned or validated correctness thresholds.
+
+Severity increases linearly from zero to the full-severity scale and is capped
+at one. At the user's request, unavailable categories are omitted and remaining
+positive weights are renormalized to 100 without a blocking warning. Details
+retain actual contributors, effective weights, method settings and original
+source evidence. No available category means no fabricated score. Display rounds
+to the nearest integer with halves away from zero; red is 0–50, yellow 51–90 and
+green 91–100. The compact dial includes the number and labels, not colour alone.
+Compute from original saved replay samples, never display transforms; clear the
+rating when patient, test, result or source replay changes.
 
 ### 7.4 Findings and feedback
 

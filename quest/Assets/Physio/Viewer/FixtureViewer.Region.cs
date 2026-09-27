@@ -8,10 +8,11 @@ namespace Physio.Viewer
     public sealed partial class FixtureViewer
     {
         private string regionLabel = "";
-        private LineRenderer? regionBracket;
+        private LineRenderer? regionHalo;
+        private LineRenderer? regionLeader;
         private TMP_Text? regionCaption;
         private GameObject? regionCaptionRoot;
-        private readonly Vector3[] regionCorners = new Vector3[5];
+        private readonly Vector3[] regionHaloPoints = new Vector3[33];
 
         private void ClearRegionMarker()
         {
@@ -22,7 +23,8 @@ namespace Physio.Viewer
 
         private void HideRegionMarker()
         {
-            if (regionBracket != null) regionBracket.gameObject.SetActive(false);
+            if (regionHalo != null) regionHalo.gameObject.SetActive(false);
+            if (regionLeader != null) regionLeader.gameObject.SetActive(false);
             if (regionCaptionRoot != null) regionCaptionRoot.SetActive(false);
         }
 
@@ -44,26 +46,40 @@ namespace Physio.Viewer
                 return;
             }
             EnsureRegionMarker();
-            bounds.Expand(.12f);
-            var low = bounds.min; var high = bounds.max; var z = bounds.center.z;
-            regionCorners[0] = new Vector3(low.x, low.y, z); regionCorners[1] = new Vector3(low.x, high.y, z);
-            regionCorners[2] = new Vector3(high.x, high.y, z); regionCorners[3] = new Vector3(high.x, low.y, z); regionCorners[4] = regionCorners[0];
-            regionBracket!.SetPositions(regionCorners); regionBracket.gameObject.SetActive(true);
-            regionCaption!.text = regionLabel + " · estimated region";
-            regionCaptionRoot!.transform.localPosition = new Vector3(bounds.center.x, high.y + .1f, z);
+            var radiusX = Mathf.Max(bounds.extents.x + .075f, .085f);
+            var radiusY = Mathf.Max(bounds.extents.y + .075f, .10f);
+            var z = bounds.center.z - .04f;
+            for (var index = 0; index < regionHaloPoints.Length; index++)
+            {
+                var angle = index * (Mathf.PI * 2f / (regionHaloPoints.Length - 1));
+                regionHaloPoints[index] = new Vector3(bounds.center.x + Mathf.Cos(angle) * radiusX,
+                    bounds.center.y + Mathf.Sin(angle) * radiusY, z);
+            }
+            regionHalo!.SetPositions(regionHaloPoints); regionHalo.gameObject.SetActive(true);
+            var labelPosition = new Vector3(bounds.center.x + radiusX + .16f, bounds.center.y + radiusY + .10f, z);
+            regionLeader!.SetPosition(0, new Vector3(bounds.center.x + radiusX, bounds.center.y, z));
+            regionLeader.SetPosition(1, labelPosition);
+            regionLeader.gameObject.SetActive(true);
+            regionCaption!.text = regionLabel + " · estimated";
+            regionCaptionRoot!.transform.localPosition = labelPosition;
             regionCaptionRoot.SetActive(true);
         }
 
         private void EnsureRegionMarker()
         {
-            if (regionBracket != null) return;
-            var bracket = new GameObject("Selected evidence region bracket");
-            bracket.transform.SetParent(replayDisplayRoot, false);
-            regionBracket = bracket.AddComponent<LineRenderer>();
-            regionBracket.useWorldSpace = false; regionBracket.positionCount = 5; regionBracket.widthMultiplier = .009f;
-            regionBracket.sharedMaterial = boneMaterial;
+            if (regionHalo != null) return;
+            var halo = new GameObject("Selected anatomy halo");
+            halo.transform.SetParent(replayDisplayRoot, false);
+            regionHalo = halo.AddComponent<LineRenderer>();
+            regionHalo.useWorldSpace = false; regionHalo.positionCount = regionHaloPoints.Length; regionHalo.widthMultiplier = .012f;
+            regionHalo.sharedMaterial = boneMaterial;
             var properties = new MaterialPropertyBlock(); properties.SetColor("_Color", new Color(1f, .78f, .25f));
-            regionBracket.SetPropertyBlock(properties);
+            regionHalo.SetPropertyBlock(properties);
+            var leader = new GameObject("Selected anatomy callout");
+            leader.transform.SetParent(replayDisplayRoot, false);
+            regionLeader = leader.AddComponent<LineRenderer>();
+            regionLeader.useWorldSpace = false; regionLeader.positionCount = 2; regionLeader.widthMultiplier = .006f;
+            regionLeader.sharedMaterial = boneMaterial; regionLeader.SetPropertyBlock(properties);
             regionCaptionRoot = new GameObject("Selected evidence region label", typeof(Canvas));
             regionCaptionRoot.transform.SetParent(replayDisplayRoot, false);
             regionCaptionRoot.GetComponent<Canvas>().renderMode = RenderMode.WorldSpace;
@@ -79,11 +95,22 @@ namespace Physio.Viewer
 
         private void LateUpdate()
         {
+            MaintainGroundedReplay();
             if (regionCaptionRoot == null || !regionCaptionRoot.activeSelf) return;
             var eye = GetEyeTransform();
             if (eye == null) return;
             var direction = regionCaptionRoot.transform.position - eye.position;
             if (direction.sqrMagnitude > .0001f) regionCaptionRoot.transform.rotation = Quaternion.LookRotation(direction, Vector3.up);
+        }
+
+        private void MaintainGroundedReplay()
+        {
+            if (replayDisplayRoot == null || replay == null) return;
+            var rig = FindFirstObjectByType<OVRCameraRig>();
+            if (rig == null || rig.trackingSpace == null) return;
+            var point = replayDisplayRoot.position;
+            point.y = rig.trackingSpace.position.y - firstSurfaceBottom * replayDisplayRoot.lossyScale.y;
+            replayDisplayRoot.position = point;
         }
     }
 }

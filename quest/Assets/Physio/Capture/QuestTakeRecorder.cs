@@ -18,6 +18,7 @@ namespace Physio.Capture
         public bool IsRecording { get; private set; }
         public bool IsFinalizing { get; private set; }
         public bool IsPreparing => waitingForCamera || countingDown || waitingForEncoder || (syntheticBenchmark && !IsRecording && encoder!=null);
+        public bool IsPreviewing => previewReady;
         public string Status { get; private set; }="Ready to record a consenting participant.";
         public string Error { get; private set; }="";
         public CompletedCapture LastCapture { get; private set; }
@@ -26,6 +27,8 @@ namespace Physio.Capture
         public int FrameCount => frames.Count;
         public double TargetDurationSeconds { get; private set; }=10;
         public double RemainingSeconds => Math.Max(0,TargetDurationSeconds-DurationSeconds);
+        public int CountdownSeconds => countingDown ? Math.Max(0, (int)Math.Ceiling(deadline-Time.realtimeSinceStartupAsDouble)) : 0;
+        public bool IsCountingDown => countingDown;
 
         PassthroughCameraAccess cameraAccess;
         AndroidJavaObject encoder;
@@ -38,7 +41,7 @@ namespace Physio.Capture
         readonly Dictionary<string,int> missedReasons=new Dictionary<string,int>(StringComparer.Ordinal);
         string patient,session,test,view,side,take,directory;
         StreamWriter journal;
-        bool waitingForCamera,requestingPermission,countingDown,waitingForEncoder,stopping,interrupted,encoderFinishing,isMicroscopeHold;
+        bool waitingForCamera,requestingPermission,previewReady,countingDown,waitingForEncoder,stopping,interrupted,encoderFinishing,isMicroscopeHold;
         double deadline;
         long originNs=-1,lastObserved=-1,captureCompletedTicks,targetDurationNs=10_000_000_000;
         int observedFrames,width,height,generation;
@@ -53,7 +56,7 @@ namespace Physio.Capture
 
         public void BeginTake(string patientId,string sessionId,string testType,string captureView="front",string captureSide="not_applicable",bool microscopeHold=false,double targetDurationSeconds=10)
         {
-            if(syntheticBenchmark || IsRecording || IsPreparing || IsFinalizing) { Error="Finish the current take first."; return; }
+            if(syntheticBenchmark || IsRecording || IsPreparing || IsPreviewing || IsFinalizing) { Error="Finish the current take first."; return; }
             try {
                 CaptureBundle.ValidateIdentity(patientId,sessionId,testType,captureView,captureSide);
                 targetDurationNs=CaptureBundle.TargetDurationNanoseconds(targetDurationSeconds);
@@ -62,7 +65,7 @@ namespace Physio.Capture
             TargetDurationSeconds=targetDurationSeconds;
             patient=patientId;session=sessionId;test=testType;view=captureView;side=captureSide;
             isMicroscopeHold=microscopeHold;
-            LastCapture=null;Error="";interrupted=false;stopping=false;encoderFinishing=false;
+            LastCapture=null;Error="";interrupted=false;stopping=false;encoderFinishing=false;previewReady=false;
             frames.Clear();missedTimes.Clear();originNs=-1;lastObserved=-1;observedFrames=0;generation++;
 #if UNITY_ANDROID && !UNITY_EDITOR
             if(!SystemInfo.supportsAsyncGPUReadback) { Fail("This graphics configuration cannot read camera images."); return; }
@@ -107,7 +110,8 @@ namespace Physio.Capture
             if(syntheticBenchmark) { UpdateSyntheticBenchmark();return; }
             if(waitingForCamera) {
                 if(cameraAccess!=null && cameraAccess.IsPlaying && HasCaptureFocus) {
-                    waitingForCamera=false;countingDown=true;deadline=Time.realtimeSinceStartupAsDouble+3;
+                    waitingForCamera=false;previewReady=true;
+                    Status="Camera ready. Check the full required region, then press Record this view.";
                 } else if(Time.realtimeSinceStartupAsDouble>deadline) Fail("Camera did not start. Check permission and retry.");
                 return;
             }
@@ -157,8 +161,9 @@ namespace Physio.Capture
             readbacks=new CaptureReadbacks(checked(width*height*4));
             readbackTotalMs=copyTotalMs=submitTotalMs=maxSubmitMs=0;readbackCount=submitAttempts=maxPendingReadbacks=0;missedReasons.Clear();metricsLogged=false;
             captureStartedAt=Time.realtimeSinceStartupAsDouble;
-            // Preserve graphics API row order; never blit a previous camera texture onto the next timestamp.
-            encoder=new AndroidJavaObject("com.hth.capture.PhysioMp4Recorder",Path.Combine(directory,take+".mp4"),width,height,!SystemInfo.graphicsUVStartsAtTop);
+            // Quest Vulkan PCA/Texture2D readback is bottom-up; MediaCodec requires top-down rows.
+            // Verified with the asymmetric on-device benchmark; graphicsUVStartsAtTop is not readback row order.
+            encoder=new AndroidJavaObject("com.hth.capture.PhysioMp4Recorder",Path.Combine(directory,take+".mp4"),width,height,true);
             submitMethod=AndroidJNIHelper.GetMethodID(encoder.GetRawClass(),"submit","([BJ)Z");
         }
 
@@ -251,12 +256,27 @@ namespace Physio.Capture
 
         public void StopTake()
         {
+            if(IsPreviewing) { ClosePreview("Camera preview closed. Open it again to frame the next take."); return; }
             if(IsPreparing) { waitingForCamera=countingDown=waitingForEncoder=false;Fail("Recording cancelled before capture.");return; }
             if(!IsRecording) return;
             captureCompletedTicks=System.Diagnostics.Stopwatch.GetTimestamp();
             IsRecording=false;stopping=true;IsFinalizing=true;Status="Saving original recording and verifying video timestamps.";
             readbacks?.StopAccepting();deadline=Time.realtimeSinceStartupAsDouble+5;
             if(readbacks==null || readbacks.Count==0) FinishEncoder();
+        }
+
+        public void StartCountdown()
+        {
+            if(!IsPreviewing || !HasCaptureFocus) { Error="Open the camera and check framing before recording."; return; }
+            Error="";previewReady=false;countingDown=true;deadline=Time.realtimeSinceStartupAsDouble+3;
+            Status="Recording starts in 3. Keep the headset steady.";
+        }
+
+        private void ClosePreview(string message)
+        {
+            generation++;previewReady=false;
+            if(cameraAccess!=null) cameraAccess.enabled=false;
+            Error="";Status=message;
         }
 
         void FinishEncoder()
@@ -320,7 +340,7 @@ namespace Physio.Capture
             Error=string.IsNullOrEmpty(message)?"Capture failed. Retake required.":message;Status=Error;
             generation++;DiscardReadbacks("capture_failed");
             if(encoder!=null) LogCaptureMetrics();
-            waitingForCamera=requestingPermission=countingDown=waitingForEncoder=IsRecording=IsFinalizing=false;
+            waitingForCamera=requestingPermission=previewReady=countingDown=waitingForEncoder=IsRecording=IsFinalizing=false;
             encoder?.Call("finish");encoder?.Dispose();encoder=null;readbacks=null;journal?.Dispose();journal=null;
             syntheticBenchmark=false;if(syntheticTexture!=null) Destroy(syntheticTexture);
             if(cameraAccess!=null) cameraAccess.enabled=false;
@@ -332,6 +352,7 @@ namespace Physio.Capture
                 Interrupt("Headset capture was interrupted. Retake required.");DiscardReadbacks("application_paused");
                 if(!encoderFinishing) FinishEncoder();
             }
+            else if(paused && IsPreviewing) ClosePreview("Camera preview closed when the app paused. Open it again to frame the take.");
             else if(paused && IsPreparing) Fail("Capture was interrupted before recording. Try again.");
         }
         void OnApplicationFocus(bool focused) { if(!focused) LostFocus(); }
@@ -341,6 +362,7 @@ namespace Physio.Capture
                 Interrupt("Headset focus was lost. Retake required.");DiscardReadbacks("focus_lost");
                 if(!encoderFinishing) FinishEncoder();
             }
+            else if(IsPreviewing) ClosePreview("Camera preview closed when headset focus was lost. Open it again to frame the take.");
             else if(countingDown || waitingForEncoder || (waitingForCamera && !requestingPermission)) Fail("Capture was interrupted before recording. Try again.");
         }
         void OnDestroy() { generation++;DiscardReadbacks("recorder_destroyed");encoder?.Call("finish");encoder?.Dispose();journal?.Dispose(); }
