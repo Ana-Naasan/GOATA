@@ -109,10 +109,131 @@ static class WorkflowChecks
             await ReplayAndEvidence(root, store, first.Id);
             await RetryAndPolling(root, store, first.Id);
             MicroscopeBundle(root, store, first.Id);
+            GuidedCaptureBundle(root, store, first.Id, second.Id);
             Check(!Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).Where(f => f.EndsWith(".json")).Any(f => File.ReadAllText(f).Contains("private-token")), "No auth token persisted.");
             Console.WriteLine($"Workflow checks: {checks} passed.");
         }
         finally { Directory.Delete(root, true); }
+    }
+    static void GuidedCaptureBundle(string root, LocalPatientStore store, Guid patient, Guid otherPatient)
+    {
+        var session = store.CreateSession(patient, "elk");
+        Check(store.GuidedCapture(patient, session.Id) == null, "Legacy/new sessions have no implicit guided draft.");
+        var draft = store.BeginGuidedCapture(patient, session.Id);
+        Check(draft.Views.Select(v => v.View).SequenceEqual(new[] { "right", "front", "rear", "left" }) && draft.NextView == "right", "Patient-relative guided order.");
+        Check(draft.TargetDurationSeconds == 10 && !draft.Complete && !draft.Sealed && draft.FootSide == "not_applicable", "Guided draft starts incomplete with ten-second duration.");
+        Reject(() => store.GuidedCapture(otherPatient, session.Id), "Guided draft remains patient isolated.");
+        Reject(() => store.CompleteGuidedCapture(patient, session.Id, null), "Incomplete sequence cannot seal.");
+        var selected = new Dictionary<string, Guid>();
+        foreach (var view in new[] { "right", "front", "rear", "left" })
+        {
+            var input = MakeGuidedCapture(root, session, view);
+            draft = store.SaveGuidedTake(patient, session.Id, input.Manifest.ToString(), input.Zip);
+            selected[view] = Guid.Parse((string)input.Manifest["takes"]![0]!["take_id"]!);
+            Check(draft.Views.Single(v => v.View == view).SelectedTakeId == selected[view], "Saved take selects its exact original.");
+            store = new LocalPatientStore(root);
+            Check(store.BeginGuidedCapture(patient, session.Id).Views.Single(v => v.View == view).TakeIds.Single() == selected[view], "Restart keeps each completed view.");
+            Check(store.SaveGuidedTake(patient, session.Id, input.Manifest.ToString(), input.Zip).Views.Single(v => v.View == view).TakeIds.Count == 1, "Same take save retry is idempotent.");
+        }
+        Check(draft.Complete && draft.NextView == null && draft.SuggestedReplayTakeId == selected["right"], "Four views completed without fusing their times.");
+        var retake = MakeGuidedCapture(root, session, "right");
+        draft = store.SaveGuidedTake(patient, session.Id, retake.Manifest.ToString(), retake.Zip);
+        Check(draft.Views[0].TakeIds.Count == 2 && draft.Views[0].SelectedTakeId != selected["right"], "Retake preserves original and selects replacement.");
+        draft = store.SelectGuidedTake(patient, session.Id, "right", selected["right"]);
+        Check(draft.Views[0].SelectedTakeId == selected["right"], "Practitioner can retain earlier original.");
+        Check(store.SaveGuidedTake(patient, session.Id, retake.Manifest.ToString(), retake.Zip).Views[0].SelectedTakeId == selected["right"], "Delayed save retry does not override explicit selection.");
+        Reject(() => store.SelectGuidedTake(patient, session.Id, "right", selected["left"]), "Cross-view selection rejected.");
+        Reject(() => store.CompleteGuidedCapture(patient, session.Id, Guid.NewGuid()), "Unknown primary rejected.");
+        Reject(() => store.CompleteGuidedCapture(patient, session.Id, null), "Movement requires explicit primary.");
+        var complete = store.CompleteGuidedCapture(patient, session.Id, selected["front"]);
+        var manifest = JObject.Parse(File.ReadAllText(Path.Combine(root, "sessions", session.Id.ToString(), "capture", "manifest.json")));
+        Check(complete.Status == "captured" && ((JArray)manifest["takes"]!).Count == 4 && (string?)manifest["replay_take_id"] == selected["front"].ToString(), "Final bundle has four takes and chosen primary only.");
+        Check(store.GuidedCapture(patient, session.Id)!.Sealed && store.CompleteGuidedCapture(patient, session.Id, selected["front"]).Status == "captured", "Sealing retry is idempotent.");
+        Reject(() => store.CompleteGuidedCapture(patient, session.Id, selected["right"]), "Sealed primary immutable.");
+        Reject(() => store.SaveGuidedTake(patient, session.Id, retake.Manifest.ToString(), retake.Zip), "Sealed originals cannot change.");
+        foreach (var id in selected.Values) Check(File.Exists(store.OriginalVideoPath(patient, session.Id, id)), "Each chosen original available independently.");
+        var invalidSession = store.CreateSession(patient, "rtk"); store.BeginGuidedCapture(patient, invalidSession.Id);
+        foreach (var bad in new[] { "short", "interrupted", "gap", "invalid_frame", "wrong_side", "wrong_view", "wrong_condition", "wrong_kind", "duration_lie", "undeclared_gap", "too_long", "hash" })
+        {
+            var input = MakeGuidedCapture(root, invalidSession, "right", bad);
+            Reject(() => store.SaveGuidedTake(patient, invalidSession.Id, input.Manifest.ToString(), input.Zip), "Malformed guided input rejected: " + bad);
+            Check(store.GuidedCapture(patient, invalidSession.Id)!.Views.All(v => v.SelectedTakeId == null), "Rejected input never advances progress.");
+        }
+        var good = MakeGuidedCapture(root, invalidSession, "right"); store.SaveGuidedTake(patient, invalidSession.Id, good.Manifest.ToString(), good.Zip);
+        var planPath = Path.Combine(root, "sessions", invalidSession.Id.ToString(), "capture-draft", "plan.json");
+        File.Copy(planPath + ".bak", planPath, true);
+        Check(new LocalPatientStore(root).GuidedCapture(patient, invalidSession.Id)!.Views[0].SelectedTakeId.HasValue, "Published take recovered after crash before progress update.");
+        foreach (var beforePublication in new[] { false, true })
+        {
+            var recovery = store.CreateSession(patient, "elk"); store.BeginGuidedCapture(patient, recovery.Id);
+            var oldTake = MakeGuidedCapture(root, recovery, "right"); store.SaveGuidedTake(patient, recovery.Id, oldTake.Manifest.ToString(), oldTake.Zip);
+            var newTake = MakeGuidedCapture(root, recovery, "right"); store.SaveGuidedTake(patient, recovery.Id, newTake.Manifest.ToString(), newTake.Zip);
+            var newId = Guid.Parse((string)newTake.Manifest["takes"]![0]!["take_id"]!);
+            var recoveryPlan = Path.Combine(root, "sessions", recovery.Id.ToString(), "capture-draft", "plan.json");
+            File.Copy(recoveryPlan + ".bak", recoveryPlan, true);
+            var published = Path.Combine(root, "sessions", recovery.Id.ToString(), "capture-draft", "takes", newId.ToString());
+            if (beforePublication) Directory.Move(published, published + ".pending");
+            var restored = new LocalPatientStore(root);
+            Check(restored.GuidedCapture(patient, recovery.Id)!.Views[0].SelectedTakeId == newId, "Retake selection intent recovers across publication boundary.");
+            Check(restored.SaveGuidedTake(patient, recovery.Id, oldTake.Manifest.ToString(), oldTake.Zip).Views[0].SelectedTakeId == newId, "Older delayed save cannot undo recovered retake.");
+        }
+        foreach (var duration in new[] { 5, 15 })
+        {
+            var timed = store.CreateSession(patient, "rtk"); store.BeginGuidedCapture(patient, timed.Id);
+            Check(store.BeginGuidedCapture(patient, timed.Id, targetDurationSeconds: duration).TargetDurationSeconds == duration, "Duration adjustable before first saved view.");
+            var input = MakeGuidedCapture(root, timed, "right", durationSeconds: duration);
+            store.SaveGuidedTake(patient, timed.Id, input.Manifest.ToString(), input.Zip);
+            Check(new LocalPatientStore(root).GuidedCapture(patient, timed.Id)!.TargetDurationSeconds == duration, "Duration persists on restart.");
+            Reject(() => store.BeginGuidedCapture(patient, timed.Id), "Duration fixed after first recording.");
+        }
+        var noPlan = store.CreateSession(patient, "elk"); var noPlanInput = MakeGuidedCapture(root, noPlan, "right");
+        Reject(() => store.SaveGuidedTake(patient, noPlan.Id, noPlanInput.Manifest.ToString(), noPlanInput.Zip), "Recording requires explicit guided plan.");
+        Reject(() => store.BeginGuidedCapture(patient, noPlan.Id, targetDurationSeconds: 0), "Zero recording duration rejected.");
+        Reject(() => store.BeginGuidedCapture(patient, noPlan.Id, targetDurationSeconds: double.NaN), "Non-finite duration rejected.");
+        var wrongPatient = (JObject)good.Manifest.DeepClone(); wrongPatient["patient_id"] = otherPatient.ToString();
+        Reject(() => store.SaveGuidedTake(patient, invalidSession.Id, wrongPatient.ToString(), good.Zip), "Cross-patient guided manifest rejected.");
+        var colliding = (JObject)good.Manifest.DeepClone(); colliding["capture_completed_at"] = "2026-01-01T00:00:00Z";
+        Reject(() => store.SaveGuidedTake(patient, invalidSession.Id, colliding.ToString(), good.Zip), "Existing take ID cannot acquire different metadata.");
+        Reject(() => store.SelectGuidedTake(patient, invalidSession.Id, "other", Guid.NewGuid()), "Unsupported selected viewpoint rejected.");
+        var budgetCheck = typeof(LocalPatientStore).GetMethod("CombinedCaptureSize", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        JObject DeclaredFiles(long videoBytes) => new JObject { ["takes"] = new JArray(Enumerable.Range(0, 4).Select(_ => new JObject {
+            ["video"] = new JObject { ["byte_size"] = videoBytes }, ["frame_metadata"] = new JObject { ["byte_size"] = 4096 } })) };
+        Check((long)budgetCheck.Invoke(null, new object[] { DeclaredFiles(100_000_000) })! > 400_000_000, "Storage reserve uses expanded member sizes plus ZIP headers.");
+        try { budgetCheck.Invoke(null, new object[] { DeclaredFiles(150_000_000) }); throw new Exception("Expected expanded-size rejection."); }
+        catch (System.Reflection.TargetInvocationException error) when (error.InnerException is InvalidDataException) { checks++; }
+        var feet = store.CreateSession(patient, "barefoot"); store.BeginGuidedCapture(patient, feet.Id, "right");
+        foreach (var view in new[] { "right", "front", "rear", "left" })
+        { var input = MakeGuidedCapture(root, feet, view, footSide: "right"); store.SaveGuidedTake(patient, feet.Id, input.Manifest.ToString(), input.Zip); }
+        Reject(() => store.BeginGuidedCapture(patient, feet.Id, "left"), "Foot laterality cannot change within draft.");
+        Check(store.GuidedCapture(patient, feet.Id)!.SuggestedReplayTakeId == null, "Foot views do not become fabricated full-body replay.");
+        Reject(() => store.CompleteGuidedCapture(patient, feet.Id, selected["front"]), "Foot cannot nominate unrelated body.");
+        Check(store.CompleteGuidedCapture(patient, feet.Id, null).Status == "captured", "Four foot views retain selected side and standing condition.");
+    }
+    static (JObject Manifest, string Zip) MakeGuidedCapture(string root, SessionRecord session, string view, string? failure = null, string footSide = "left", int durationSeconds = 10)
+    {
+        var input = MakeCapture(root, session); var manifest = input.Manifest; var take = manifest["takes"]![0]!;
+        var videoName = (string)take["video"]!["member"]!; var metadataName = (string)take["frame_metadata"]!["member"]!;
+        JObject metadata;
+        using (var zip = ZipFile.OpenRead(input.Zip)) using (var reader = new StreamReader(zip.GetEntry(metadataName)!.Open())) metadata = JObject.Parse(reader.ReadToEnd());
+        var count = failure == "short" || failure == "duration_lie" ? 150 : failure == "too_long" ? 450 : durationSeconds * 30;
+        var times = Enumerable.Range(0, count).Select(i => 1000000000L + i * 1000000000L / 30).ToArray();
+        metadata["frames"] = new JArray(times.Select((ns, i) => new JObject { ["frame_id"] = i, ["pts_ns"] = ns.ToString(), ["image_valid"] = failure != "invalid_frame" }));
+        metadata["media"]!["presentation_time_us"] = new JArray(times.Select(ns => ((ns - times[0]) / 1000).ToString()));
+        foreach (var item in new[] { take, metadata["capture"]! })
+        { item["view"] = failure == "wrong_view" ? "medial" : view; item["side"] = failure == "wrong_side" ? "bilateral" : session.TestType == "barefoot" ? footSide : "not_applicable"; item["condition"] = failure == "wrong_condition" ? "steady_hold" : session.TestType == "barefoot" ? "standing" : "seated"; }
+        if (failure == "undeclared_gap")
+        { metadata["frames"] = new JArray(metadata["frames"]!.First!.DeepClone(), metadata["frames"]!.Last!.DeepClone()); metadata["media"]!["presentation_time_us"] = new JArray("0", "9966666"); }
+        metadata["capture"]!["interrupted"] = failure == "interrupted";
+        if (failure == "gap") metadata["capture"]!["gaps"] = new JArray(new JObject { ["start_pts_ns"] = "1000000001", ["end_pts_ns"] = "1033333332", ["reason"] = "unit test gap" });
+        take["kind"] = failure == "wrong_kind" ? "microscope" : session.TestType == "barefoot" ? "foot_closeup" : "full_body";
+        take["duration_s"] = failure == "duration_lie" ? 10 : (times.Last() - times[0]) / 1e9;
+        if (session.TestType == "barefoot") manifest.Remove("replay_take_id");
+        var bytes = Encoding.UTF8.GetBytes(metadata.ToString()); take["frame_metadata"] = FileEntry(metadataName, bytes);
+        if (failure == "hash") take["video"]!["sha256"] = new string('0', 64);
+        var path = Path.Combine(root, Guid.NewGuid() + ".zip");
+        using (var zip = ZipFile.Open(path, ZipArchiveMode.Create))
+        { using (var output = zip.CreateEntry(videoName).Open()) output.Write(input.Video); using (var output = zip.CreateEntry(metadataName).Open()) output.Write(bytes); }
+        return (manifest, path);
     }
     static void MicroscopeBundle(string root, LocalPatientStore store, Guid patient)
     {
@@ -128,6 +249,15 @@ static class WorkflowChecks
         Reject(() => store.SaveMicroscopeCapture(patient, original.Id, original.Id, supplement.Manifest.ToString(), supplement.Zip), "Original session cannot be replaced.");
         var wrong = store.CreateSession(patient, "rtk");
         Reject(() => store.SaveMicroscopeCapture(patient, wrong.Id, original.Id, supplement.Manifest.ToString(), supplement.Zip), "Cross-test supplement rejected.");
+        var badNext = store.CreateSession(patient, "elk"); var malformed = MakeCapture(root, badNext, microscopeHold: true);
+        using (var zip = ZipFile.Open(malformed.Zip, ZipArchiveMode.Update))
+        {
+            var member = (string)malformed.Manifest["takes"]![0]!["video"]!["member"]!;
+            zip.GetEntry(member)!.Delete(); using var output = zip.CreateEntry(member, CompressionLevel.Optimal).Open(); output.Write(new byte[65536]);
+        }
+        try { store.SaveMicroscopeCapture(patient, badNext.Id, original.Id, malformed.Manifest.ToString(), malformed.Zip); throw new Exception("Expected ZIP preflight rejection."); }
+        catch (InvalidDataException error) { Check(error.Message == "Combined ZIP member differs from declared recording.", "Supplemental expansion rejected before copying bytes beyond reserved member size."); }
+
     }
     static async Task RetryAndPolling(string root, LocalPatientStore store, Guid patient)
     {

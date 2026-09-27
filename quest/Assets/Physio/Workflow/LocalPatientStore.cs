@@ -11,7 +11,7 @@ using static Physio.Replay.ReplayJson;
 namespace Physio.Workflow
 {
     /// <summary>App-private patient records. IDs, never names, select histories and paths.</summary>
-    public sealed class LocalPatientStore
+    public sealed partial class LocalPatientStore
     {
         private readonly string root;
         private readonly object gate = new object();
@@ -142,34 +142,47 @@ namespace Physio.Workflow
                 combined["capture_completed_at"] = supplement["capture_completed_at"]!.DeepClone();
                 combined["takes"] = new JArray(((JArray)primary["takes"]!).Concat(takes).Select(t => t.DeepClone()));
                 WorkflowValidation.Capture(combined, target);
-                var inputSize = new FileInfo(UploadPath(source)).Length + new FileInfo(zipPath).Length;
-                Require(inputSize > 0 && inputSize <= 512L * 1024 * 1024, "Combined capture ZIP exceeds the upload limit.");
-                EnsureSpace(inputSize * 2 + 128L * 1024 * 1024);
+                var combinedSize = CombinedCaptureSize(combined);
+                EnsureSpace(combinedSize * 2 + 128L * 1024 * 1024);
                 var temporary = Path.Combine(SessionDirectory(newSessionId), "combined.pending.zip");
                 try
                 {
-                    using (var output = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
-                    using (var bundle = new ZipArchive(output, ZipArchiveMode.Create))
-                    {
-                        var names = new HashSet<string>(StringComparer.Ordinal); long total = 0;
-                        foreach (var inputPath in new[] { UploadPath(source), zipPath })
-                        {
-                            using var input = ZipFile.OpenRead(inputPath);
-                            Require(input.Entries.Count <= 16, "Too many capture members.");
-                            foreach (var entry in input.Entries)
-                            {
-                                Require(names.Add(entry.FullName) && entry.Length > 0 && entry.Length <= 512L * 1024 * 1024 && ((entry.ExternalAttributes >> 16) & 0xf000) != 0xa000, "Invalid, linked or duplicate capture member.");
-                                using var stream = entry.Open(); using var destination = bundle.CreateEntry(entry.FullName, CompressionLevel.NoCompression).Open();
-                                var buffer = new byte[65536]; int count;
-                                while ((count = stream.Read(buffer, 0, buffer.Length)) > 0)
-                                { total += count; Require(total <= 512L * 1024 * 1024, "Combined capture exceeded upload limit."); destination.Write(buffer, 0, count); }
-                            }
-                        }
-                    }
+                    CombineCaptureArchives(new[] { UploadPath(source), zipPath }, temporary, combined);
                     SaveCapture(patientId, newSessionId, combined.ToString(Newtonsoft.Json.Formatting.None), temporary);
                 }
                 finally { if (File.Exists(temporary)) File.Delete(temporary); }
             }
+        }
+        private static long CombinedCaptureSize(JObject manifest)
+        {
+            // Output is uncompressed. Reserve both the temporary ZIP and immutable copy, including bounded ZIP headers.
+            var files = ((JArray)manifest["takes"]!).SelectMany(t => new[] { t["video"]!, t["frame_metadata"]! }).ToArray();
+            var bytes = files.Sum(file => WorkflowJson.Size(file["byte_size"])) + files.Length * 512L + 1024;
+            Require(bytes <= 512L * 1024 * 1024, "Expanded recordings exceed the combined 512 MiB upload limit.");
+            return bytes;
+        }
+        private static void CombineCaptureArchives(IEnumerable<string> paths, string target, JObject manifest)
+        {
+            using var output = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None);
+            using var archive = new ZipArchive(output, ZipArchiveMode.Create);
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            var expected = ((JArray)manifest["takes"]!).SelectMany(t => new[] { t["video"]!, t["frame_metadata"]! })
+                .ToDictionary(file => (string)file["member"]!, file => WorkflowJson.Size(file["byte_size"]), StringComparer.Ordinal);
+            foreach (var path in paths)
+            {
+                using var input = ZipFile.OpenRead(path); Require(input.Entries.Count <= 16, "Too many capture members.");
+                foreach (var entry in input.Entries)
+                {
+                    Require(names.Add(entry.FullName) && entry.Length > 0 && entry.Length <= 512L * 1024 * 1024 && ((entry.ExternalAttributes >> 16) & 0xf000) != 0xa000, "Invalid, linked or duplicate capture member.");
+                    Require(expected.TryGetValue(entry.FullName, out var expectedSize) && entry.Length == expectedSize, "Combined ZIP member differs from declared recording.");
+                    using var source = entry.Open(); using var destination = archive.CreateEntry(entry.FullName, CompressionLevel.NoCompression).Open();
+                    var buffer = new byte[65536]; long copied = 0; int count;
+                    while ((count = source.Read(buffer, 0, buffer.Length)) > 0)
+                    { copied += count; Require(copied <= expectedSize, "Combined capture member exceeded its reserved size."); destination.Write(buffer, 0, count); }
+                    Require(copied == expectedSize, "Combined capture member is truncated.");
+                }
+            }
+            Require(names.Count == expected.Count, "Combined capture is missing expected recordings.");
         }
         public string OriginalVideoPath(Guid patientId, Guid sessionId, Guid takeId)
         {
@@ -310,7 +323,7 @@ namespace Physio.Workflow
             var used = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).Sum(file => new FileInfo(file).Length);
             Require(extra >= 0 && extra <= StorageLimit - used, "Local storage budget reached. Export or remove old test data before recording again.");
         }
-        private static void ValidateZip(JObject manifest, string zipPath, string output)
+        private static void ValidateZip(JObject manifest, string zipPath, string output, bool writeSidecars = true)
         {
             var files = ((JArray)manifest["takes"]!).SelectMany(t => new[] { (JObject)t["video"]!, (JObject)t["frame_metadata"]! })
                 .ToDictionary(f => (string)f["member"]!, StringComparer.Ordinal);
@@ -338,7 +351,7 @@ namespace Physio.Workflow
                 {
                     var data = WorkflowJson.Read(sidecar.ToArray());
                     var take = (JObject)((JArray)manifest["takes"]!).Single(t => (string?)t["frame_metadata"]?["member"] == entry.FullName);
-                    WorkflowValidation.Sidecar(data, take); AtomicJson(Path.Combine(output, entry.FullName), data);
+                    WorkflowValidation.Sidecar(data, take); if (writeSidecars) AtomicJson(Path.Combine(output, entry.FullName), data);
                 }
             }
         }

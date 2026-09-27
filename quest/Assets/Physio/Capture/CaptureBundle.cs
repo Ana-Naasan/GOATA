@@ -38,6 +38,17 @@ namespace Physio.Capture
         public const long MaximumDurationNs = 19_966_666_666;
         static string Decimal(long value) => value.ToString(CultureInfo.InvariantCulture);
 
+        public static long TargetDurationNanoseconds(double seconds)
+        {
+            if(double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds<1 || seconds>15)
+                throw new ArgumentException("Recording duration must be between 1 and 15 seconds.");
+            return checked((long)Math.Round(seconds*1e9));
+        }
+
+        // A 30fps take spans first-to-last sample, one frame less than its playback duration.
+        public static bool DurationComplete(long firstNs,long lastNs,long targetNs) =>
+            firstNs>=0 && lastNs>=firstNs && lastNs-firstNs>=targetNs-33_333_334;
+
         public static void ValidateIdentity(string patient, string session, string test, string view, string side)
         {
             if (!Guid.TryParseExact(patient,"D",out _) || !Guid.TryParseExact(session,"D",out _))

@@ -432,6 +432,7 @@ namespace Physio.Viewer
 
         private void RenderCurrentFrame(bool force)
         {
+            UpdateFindingHighlight(force);
             if (replay == null || clock == null || mesh == null || meshVertices == null) return;
 
             var sample = clock.Sample;

@@ -35,6 +35,31 @@ namespace Physio.Workflow
         internal SessionRecord(JObject data) { Data = (JObject)data.DeepClone(); }
     }
 
+    public sealed class GuidedCaptureView
+    {
+        public string View { get; }
+        public Guid? SelectedTakeId { get; }
+        public IReadOnlyList<Guid> TakeIds { get; }
+        internal GuidedCaptureView(string view, Guid? selected, IEnumerable<Guid> takes)
+        { View = view; SelectedTakeId = selected; TakeIds = System.Array.AsReadOnly(takes.ToArray()); }
+    }
+
+    public sealed class GuidedCaptureState
+    {
+        public IReadOnlyList<GuidedCaptureView> Views { get; }
+        public string? NextView => Views.FirstOrDefault(v => !v.SelectedTakeId.HasValue)?.View;
+        public string FootSide { get; }
+        public double TargetDurationSeconds { get; }
+        public bool Complete => Views.All(v => v.SelectedTakeId.HasValue);
+        public bool Sealed { get; }
+        public Guid? SuggestedReplayTakeId { get; }
+        internal GuidedCaptureState(IEnumerable<GuidedCaptureView> views, string side, double duration, bool sealedCapture, bool foot)
+        {
+            Views = System.Array.AsReadOnly(views.ToArray()); FootSide = side; TargetDurationSeconds = duration;
+            Sealed = sealedCapture; SuggestedReplayTakeId = foot ? null : Views.First().SelectedTakeId;
+        }
+    }
+
     public sealed class ProcessingUpdate
     {
         public string Stage { get; }
