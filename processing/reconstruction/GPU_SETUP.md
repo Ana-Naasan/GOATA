@@ -1,24 +1,21 @@
 # GVHMR local inference on Arch Linux and RTX 3070
 
-**Last updated:** September 26, 2026. Original GPU evidence below is preserved;
-current integration behavior is documented separately from that historical run.
+This guide describes the local reconstruction command. GPU measurements below
+are historical records, not a report of current host access. See
+[project status](../../docs/STATUS.md) for integration and device validation.
 
 ## Status and supported input
 
-On 2026-09-26, the main session completed real GVHMR inference and finite native SMPL-X geometry export on the Arch Linux RTX 3070 worker using a public WHAM video derivative. The run exported 242 frames, 10,475 vertices and 22 joints per frame; all eight artifact sizes and SHA-256 hashes were independently checked against the manifest. All 36 reconstruction container tests passed, including PyAV. The integration changes received independent approval. See the final smoke evidence below for provenance and measurements. This proves this input ran within the worker's resources, not visual correctness, clinical accuracy, Quest replay or whole-path latency.
-
-Initial development checks ran on macOS with Python 3.14.7, without local Docker, FFmpeg, PyAV, CUDA, body assets or model checkpoints. Those limitations do not describe the now-verified Arch worker. See the separate verification records below.
-
-The CLI prepares an original MP4, runs person tracking, ViTPose, HMR2 features, moving-camera rotation estimation and GVHMR, then evaluates native SMPL-X vertices and 22 body joints from the same fitted parameters. It retains global root translation. The CLI produces the native handoff. The service now invokes it through `processing/pipeline.py`; `processing/export.py` converts the native geometry for Unity and the microscope runs separately on original footage. Automated exercise and foot assessment remain incomplete.
+The CLI prepares an original MP4, runs person tracking, ViTPose, HMR2 features, moving-camera rotation estimation and GVHMR, then evaluates native SMPL-X vertices and 22 body joints from the same fitted parameters. It retains global root translation. The CLI produces the native handoff. The service now invokes it through `processing/pipeline.py`. `processing/export.py` converts the native geometry for Unity and the microscope runs separately on original footage. Automated exercise and foot assessment remain incomplete.
 
 Supported first-pass inputs:
 
 - One consenting participant, exactly one continuous tracked identity, one video stream.
 - SPEC sidecar `schema_version: "1.0"`, original source frame IDs and nanosecond PTS strings. UUID take ID. No filenames are read from the sidecar.
-- Upright, unmirrored pinhole image: `rotation_degrees: 0`, `mirrored: false`, camera `distortion_model: "none"` and `distortion_coefficients: []`. Unknown distortion is rejected by default; the explicit approximation below is the only opt-in exception. No implicit crop, resize, rectification or camera-pose conversion.
+- Upright, unmirrored pinhole image: `rotation_degrees: 0`, `mirrored: false`, camera `distortion_model: "none"` and `distortion_coefficients: []`. Unknown distortion is rejected by default. The explicit approximation below is the only opt-in exception. No implicit crop, resize, rectification or camera-pose conversion.
 - Even dimensions of at least 32 pixels, at most 2,073,600 pixels. Original MP4 at most 512 MiB and 3,600 decoded source frames. Prepared inference at most 600 frames, about 20 seconds. These are conservative initial bounds, not measured RTX 3070 capacity.
 - No invalid source images, explicit `capture.gaps`, interruptions or source intervals longer than 100 ms. Such takes fail rather than concealing gaps. Supply a separately identified contiguous capture, not a silently concatenated edit. Gap-containing replay is not implemented.
-- Calibrated or explicitly estimated intrinsics require positive equal `fx` and `fy`. Off-centre `cx` and `cy` are allowed. The inspected GVHMR translation code uses `fx` for both axes. Genuine unequal focal lengths require a separately verified rectification/resizing adapter with updated calibration. They are not invalid cameras, just unsupported here.
+- Calibrated or explicitly estimated intrinsics require positive equal `fx` and `fy`. Off-centre `cx` and `cy` are allowed. The inspected GVHMR translation code uses `fx` for both axes. Genuine unequal focal lengths require a separately verified adapter that rectifies or resizes images with updated calibration. They are not invalid cameras, just unsupported here.
 
 When calibration is unavailable, `--allow-estimated-intrinsics` explicitly permits the upstream diagonal-length focal estimate and image-centre principal point. Output remains labelled estimated. Physical scale is always model-estimated even with calibrated intrinsics.
 
@@ -26,17 +23,17 @@ When calibration is unavailable, `--allow-estimated-intrinsics` explicitly permi
 empty coefficient array. It records an unverified pinhole assumption in selection
 and processing provenance and labels processing intrinsics estimated. The source
 sidecar remains unchanged. Quest's SDK currently exposes intrinsics but no lens
-distortion model or coefficients; an empty array is not proof of rectification.
+distortion model or coefficients. An empty array is not proof of rectification.
 This flag does not validate lens geometry, physical measurements or output
 alignment. The corresponding service setting defaults false.
 
 ## Arch host setup
 
-The verified worker already has a working NVIDIA Docker runtime. The `bader` account requires `sudo` for Docker access; no Docker group change, daemon reconfiguration or restart is needed. The user authorized sudo, Docker builds and asset downloads on Arch. Asset access and terms still apply.
+Use a Linux amd64 host with a compatible NVIDIA driver and configured NVIDIA Docker runtime. Check access on the target host. The historical worker configuration does not establish current access or authorize installation.
 
 For a new or unconfigured host only, follow the current [Arch NVIDIA](https://wiki.archlinux.org/title/NVIDIA), [Docker](https://wiki.archlinux.org/title/Docker) and [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) instructions for the installed kernel. Do a full supported system upgrade when installing packages. Never run a partial Arch upgrade such as refreshing package databases then installing only selected packages against an old system.
 
-Install the kernel-appropriate NVIDIA driver, Docker and NVIDIA Container Toolkit from the current supported Arch package sources. This document does not choose a driver package without knowing the kernel. Reboot after a driver/kernel change where required. The container supplies CUDA 12.1 userspace; the host needs a compatible NVIDIA driver, not a separate host CUDA toolkit.
+Install the kernel-appropriate NVIDIA driver, Docker and NVIDIA Container Toolkit from the current supported Arch package sources. This document does not choose a driver package without knowing the kernel. Reboot after a driver or kernel change where required. The container supplies CUDA 12.1 userspace. The host needs a compatible NVIDIA driver, not a separate host CUDA toolkit.
 
 Record the actual host before building:
 
@@ -45,10 +42,10 @@ uname -a
 nvidia-smi
 nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv
 pacman -Q docker nvidia-container-toolkit
-sudo docker version
+docker version
 ```
 
-Only on a host whose NVIDIA runtime is not configured, an authorized operator can configure it and restart Docker. Do not run these on the already-configured worker:
+Only on a host whose NVIDIA runtime is not configured, an authorized operator can configure it and restart Docker. Skip these commands when the runtime is already configured:
 
 ```sh
 sudo nvidia-ctk runtime configure --runtime=docker
@@ -62,7 +59,7 @@ Docker daemon access grants substantial host privileges. Use an authorized local
 From the project root:
 
 ```sh
-sudo docker build --progress=plain --platform linux/amd64 \
+docker build --progress=plain --platform linux/amd64 \
   -t physio-gvhmr:ee960bb \
   processing/reconstruction
 ```
@@ -71,11 +68,11 @@ The local build context allowlists only the Dockerfile, dependency supplement an
 
 The base is upstream-compatible in intent, `pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime`, Linux amd64. Upstream specifies Python 3.10, torch 2.3.0+cu121, torchvision 0.18.0+cu121, NumPy 1.23.5, PyTorch3D 0.7.6 and PyAV 13.0.0. The image installs the pinned source's `requirements.txt`, adds HMR2's missing `yacs` dependency and constrains OpenCV to a NumPy-1-compatible version. It records resolved packages in `/opt/runtime-freeze.txt` and runs `pip check`.
 
-This is not a complete reproducibility lock: upstream leaves several dependencies unpinned and the base tag is not digest-pinned. The worker build succeeded; its image ID is recorded below. Preserve `/opt/runtime-freeze.txt` with the run record before changing dependencies or rebuilding. Build compatibility does not establish model compatibility. Network retries are disabled for apt and pip.
+Upstream leaves several dependencies unpinned and the base tag is not digest-pinned. The historical worker build succeeded. Its image ID is recorded below. Preserve `/opt/runtime-freeze.txt` with the run record before changing dependencies or rebuilding. Build compatibility does not establish model compatibility. Network retries are disabled for apt and pip.
 
 ## Externally mounted assets and terms
 
-The operator must obtain and approve assets separately. Never point this directory at participant-supplied files. Upstream checkpoint loaders use trusted Python serialization and body-model packages may do so internally. This is not a sandbox for arbitrary pickle/checkpoint uploads.
+The operator must obtain and approve assets separately. Never point this directory at participant-supplied files. Upstream checkpoint loaders use trusted Python serialization and body-model packages may do so internally. This is not a sandbox for arbitrary pickle or checkpoint uploads.
 
 Expected local asset directory, mounted at `/opt/GVHMR/inputs/checkpoints`:
 
@@ -88,7 +85,7 @@ checkpoints/
   yolo/yolov8x.pt
 ```
 
-The upstream stock renderer also requests `body_models/smpl/SMPL_NEUTRAL.pkl`. This adapter exports native SMPL-X topology instead, so it does not need that extra SMPL asset. If a later exporter uses SMPL conversion, obtain it through registration and mount it externally; do not bundle it.
+The upstream stock renderer also requests `body_models/smpl/SMPL_NEUTRAL.pkl`. This adapter exports native SMPL-X topology instead, so it does not need that extra SMPL asset. If a later exporter uses SMPL conversion, obtain it through registration and mount it externally. Do not bundle it.
 
 Access and rights:
 
@@ -101,7 +98,7 @@ The runtime checks required local files and hashes them into the handoff. Its co
 
 ## Smoke checks
 
-Set absolute paths to the project root, operator-approved assets and input folder. Keep inputs immutable for the run. Mount only the needed directories, never the Docker socket. On the verified worker, prefix the `docker run` examples below with `sudo`, including the invocation under `timeout`.
+Set absolute paths to the project root, operator-approved assets and input folder. Keep inputs immutable for the run. Mount only the needed directories, never the Docker socket. If local Docker policy requires elevated access, use the host's approved invocation, including under `timeout`.
 
 ```sh
 PROJECT="$PWD"
@@ -177,7 +174,7 @@ Choose a host memory cap it can support. This command is an example, not a measu
 
 A new output directory is required. Failure leaves diagnostic preparation files but no `handoff.json`. Never ingest a directory without that final completion marker. Retry into a new directory, not an existing cache. Monitor disk use and remove failed private outputs under the operator's retention policy. The command bounds container memory/processes and wall time; the parent service must also bound concurrency, output-directory quotas and job lifetime.
 
-## Native handoff to Bader
+## Native geometry contract
 
 `handoff.json`, local schema `gvhmr-native-1`, is not the HTTP result or Unity replay manifest. It inventories byte sizes and SHA-256 hashes for these artifacts:
 
@@ -191,7 +188,7 @@ A new output directory is required. Failure leaves diagnostic preparation files 
 Native coordinates are the upstream right-handed, gravity-aligned global `ay` frame with +Y up. Horizontal orientation is a model gauge, not a verified Quest world transform or measured facing direction. Units are model metres with estimated physical scale. Joint names come from SMPL-X `JOINT_NAMES[:22]`, parents from the mounted body's kinematic tree. Hand/face joints are not exported as supported body joints. Artifact hashes and body-asset hash identify the actual topology. The integration exporter reflects Z for both vertices and joints and reverses winding, with automated fixture checks. Real asymmetric-motion visual validation remains pending.
 
 `processing/export.py` implements the final service replay contract, bounds and
-patient/session association. Native rows are inference rows. The exporter selects
+patient and session association. Native rows are inference rows. The exporter selects
 the first fitted row for each source frame, keeps the full inference mapping as
 provenance, and preserves original source times/root movement. It never substitutes
 inference index divided by 30 for observed timing. The C# importer accepts the
@@ -199,108 +196,69 @@ original public run's 242-frame geometry, but the original legacy sidecar still
 fails the strict upload schema; that geometry check is not a successful current
 service or Quest run.
 
-The handoff records asset and adapter-source hashes, resolved key dependency versions, measured device memory, peak torch allocated/reserved memory and local stage durations. Local elapsed time includes preparation, asset checks, inference and export up to final manifest serialization. It does not measure capture completion, upload, service wait, download or Quest loading. The agreed 1–2 minute whole-path target remains untested.
+The handoff records asset and adapter-source hashes, resolved key dependency versions, measured device memory, peak torch allocated/reserved memory and local stage durations. Local elapsed time includes preparation, asset checks, inference and export up to final manifest serialization. It does not measure capture completion, upload, service wait, download or Quest loading. The agreed 1 to 2 minute whole-path target remains untested.
 
 ## Camera motion and source evidence
 
-Initial source inspection used `git clone --no-checkout` and detached checkout at the exact revision above, without downloading weights or datasets in that inspection. The main session has since installed the five approved assets. Relevant inspected files:
+The adapter follows the pinned upstream revision. Relevant upstream files:
 
 - `docs/INSTALL.md`, `requirements.txt`, `setup.py`, `LICENSE`: runtime, asset paths and terms.
-- `tools/demo/demo.py`: stock 30 FPS copy, preprocessing, `DemoPL.predict`, global/in-camera output and optional render paths.
+- `tools/demo/demo.py`: stock 30 FPS copy, preprocessing, `DemoPL.predict`, global and in-camera output and optional render paths.
 - `hmr4d/utils/preproc/tracker.py`: stock identity selection and missing-box interpolation. This adapter uses raw `Tracker.track` and rejects missing or ambiguous tracks instead.
-- `hmr4d/utils/preproc/vitpose.py`, `vitfeat_extractor.py`: crop/feature extraction and upstream batch size 16. This adapter supplies two crops per call to lower peak memory; the final smoke below demonstrates 3070 fit for that 242-frame input only.
+- `hmr4d/utils/preproc/vitpose.py`, `vitfeat_extractor.py`: crop and feature extraction and upstream batch size 16. This adapter supplies two crops per call to lower peak memory. The final smoke below demonstrates 3070 fit for that 242-frame input only.
 - `hmr4d/utils/preproc/relpose/simple_vo.py`, `solver_two_view.py`: SIFT, pycolmap two-view solve, accumulated world-to-camera rotations and interpolation. This adapter passes the same K used for GVHMR, scaled for the half-size VO images. It never defaults to a static camera or uses SimpleVO's unrelated 24 mm estimate.
 - `hmr4d/utils/preproc/slam.py` and upstream install instructions: DPVO requires its git submodule, Eigen 3.4, torch-scatter, numba, pypose, a CUDA development toolchain and `dpvo.pth`. It is optional and not installed here. No `--use-dpvo` promise is made. Use the inspected upstream default SimpleVO path first. Quest camera-pose fusion is not implemented.
 - `hmr4d/model/gvhmr/gvhmr_pl_demo.py`, `pipeline/gvhmr_pipeline.py`, `utils/geo/hmr_global.py`: prediction fields, translation integration and `any->ay` conversion.
-- `hmr4d/utils/smplx_utils.py`, `body_model/body_model_smplx.py`: neutral SMPL-X construction, batch forward, retained translation and default unpredicted face/hand fields.
+- `hmr4d/utils/smplx_utils.py`, `body_model/body_model_smplx.py`: neutral SMPL-X construction, batch forward, retained translation and default unpredicted face and hand fields.
 
-SIFT/VO may fail on textureless scenes, insufficient parallax, independently moving backgrounds or repeated frames. Failures do not fall back to identity/static camera motion. The algorithm's interpolated camera rotations are estimates, not measured headset tracking. Record real-footage failures before choosing DPVO or a tracked-pose adapter.
+SIFT and visual odometry may fail on textureless scenes, insufficient parallax, independently moving backgrounds or repeated frames. Failures do not fall back to identity rotations or static camera motion. The algorithm's interpolated camera rotations are estimates, not measured headset tracking. Record real-footage failures before choosing DPVO or a tracked-pose adapter.
 
-## CPU checks and remaining validation
+## Check the adapter
 
-From the project root, no extra test dependencies:
+Run dependency-managed checks from the project root. ML discovery imports project
+dependencies such as `jsonschema`. It is not dependency-free.
 
 ```sh
-python3 -m unittest discover -s tests/ml -v
-python3 -m compileall -q processing/reconstruction tests/ml
-python3 -m processing.reconstruction.runtime --help
+uv sync --locked --group dev
+uv run --locked python -m unittest discover -s tests/ml -v
+uv run --locked python -m processing.reconstruction.runtime --help
 ```
 
-The original 16 tests passed before implementation. New tests first failed because `runtime` did not exist, then passed after implementation. Malformed-sidecar tests also failed before the structural validation change. CPU tests exercise planning, PTS binding, rejection, metadata and CLI/orchestration failures. Mocks test only control flow, never GPU correctness. Two real PyAV encode/decode tests skipped on the initial Mac but passed inside the Arch worker image. Docker build and CUDA exposure are now verified. Preprocessing has run on public demos, with failures recorded below. The final WHAM smoke completed GVHMR prediction and finite geometry export. No automated coverage percentage is claimed for the GPU adapter; one successful inference is not a coverage measurement.
+Real codec checks require PyAV, available in the GPU image. Mocked control-flow
+tests do not prove inference, visual alignment, or clinical accuracy.
 
-Start with a short consented full-body take and a known asymmetric movement. Check PTS binding, participant identity, root movement, native joint/surface alignment, camera rotation, axis orientation and all artifact sizes/hashes before integrating replay. Record actual driver, VRAM, package freeze, peak host/GPU memory, stage times and end-to-end timing. If CUDA OOM occurs, retain the failure record and shorten a new test capture or tune measured batching limits. Do not silently lower evidence quality or claim the failed take succeeded.
+## Historical GPU evidence
 
-### Initial Mac verification record, 2026-09-26
+### Worker environment, September 26, 2026
 
-These results predate the Arch worker checks and describe only the local Mac environment.
+The recorded worker used Arch Linux kernel `7.2.6-arch2-1`, NVIDIA RTX 3070
+with 8192 MiB physical memory, driver `615.71.09`, Docker `29.8.1`, and NVIDIA
+Container Toolkit `1.20.0`. The successful image build had ID
+`sha256:66db73a15b803aa99aa47f8929ec2acd7e5d30ee84332dad8c1b62e254beeddc`.
+The container used Python `3.10.14`, torch `2.3.0+cu121`, PyAV `13.0.0`,
+and pycolmap `4.2.0`. These versions describe that build only.
 
-- `python3 -m unittest discover -s tests/ml -v`: 31 tests, 29 passed, two real-codec tests skipped because PyAV is unavailable.
-- `python3 -m compileall -q processing/reconstruction tests/ml`: passed.
-- `python3 -m processing.reconstruction.runtime --help`: passed.
-- `python3 -m trace --count --summary --missing --coverdir /tmp/gvhmr-runtime-coverage --module unittest discover -s tests/ml`: passed with the same skips. Line coverage reported native 99.0%, timing 100%, runtime 80.2%. The runtime denominator includes the unexecuted PyAV function. The lazy-imported `gvhmr.py` GPU adapter was not executed or included by trace; no whole-runtime coverage claim follows from these percentages.
-- `command -v docker ffmpeg ffprobe`: none found. Python reports 3.14.7. Docker build, GPU smoke, real codec tests and participant inference were not run.
-- Upstream `git ls-remote`, source clone and detached checkout succeeded. No network failures occurred. No tools, weights or restricted assets were installed/downloaded.
-
-### Arch worker verification record, 2026-09-26
-
-The main session performed these checks with user authorization. This documentation update records its supplied evidence; it did not contact or modify the host.
-
-- Arch Linux, kernel `7.2.6-arch2-1`, x86_64. NVIDIA RTX 3070, driver `615.71.09`. `nvidia-smi` reported physical total memory of 8192 MiB, with 10 MiB used at the initial check.
-- Host RAM was 62 GiB, about 57 GiB available; disk availability was 144 GiB at the initial check. These are point-in-time observations, not inference resource measurements.
-- Docker `29.8.1`, NVIDIA Container Toolkit `1.20.0`; NVIDIA runtime already configured.
-- Source snapshot: `/home/bader/physio-reconstruction/snapshot-20260926`. The initial home-directory asset search to maximum depth 5 found no assets; this was not an exhaustive filesystem search.
-- Build command, from the snapshot root: `sudo docker build --progress=plain --platform linux/amd64 -t physio-gvhmr:ee960bb processing/reconstruction`. Result: success. Image ID: `sha256:66db73a15b803aa99aa47f8929ec2acd7e5d30ee84332dad8c1b62e254beeddc`. Log: `docker-build.log` in the snapshot.
-- Smoke checks used all GPUs, no network, a read-only container, nonroot user `1001:1001`, a 2 GiB tmpfs, and mounts of `processing` at `/app/processing` and `tests/ml` at `/tests`. Log: `gpu-smoke.log` in the snapshot.
-- Container versions: Python `3.10.14`, torch `2.3.0+cu121`, PyAV `13.0.0`, pycolmap `4.2.0`. Import of `hmr4d.utils.preproc` succeeded. CUDA availability was true, and a CUDA `torch.ones(1).item()` check returned `1.0`.
-- The torch device report showed `total_memory=7885MB`, the memory exposed to torch. Keep this distinct from the 8192 MiB physical total reported by `nvidia-smi`; neither proves model VRAM fit or peak usage.
-- Container command `python -m unittest discover -s /tests -v`: 31 passed, zero skips, including real encode/decode tests. Most tests exercise CPU logic, not GPU model execution.
-
-All five approved assets were subsequently hash-verified and installed. At this initial checkpoint, completed inference and native geometry export were still unverified. The final smoke below supersedes that status with successful moving-camera estimation, prediction, export and torch allocator measurements. Visual geometry correctness, entire-device peak VRAM and whole-path latency remain unverified.
-
-New files from the original implementation are `processing/reconstruction/{runtime.py,gvhmr.py,Dockerfile,.dockerignore,requirements.runtime.txt,GPU_SETUP.md}` and `tests/ml/{test_runtime.py,test_media_runtime.py}`. Existing parent-owned native/timing modules and their 16 tests were not changed. No commits or pushes were made.
-
-Branch at implementation start: `codex/mohammad-ml`, base `ab5bafa1afe78c9ea4f1b8d49929a6f43cbe12f7`. Shared `docs/HANDOFF.md`, spec and API were outside this assignment's write scope and remain unchanged. The parent must transfer this actual status into the shared handoff and review the proposed local interchange with capture and service owners. The scoped integration subsequently received independent approval. It is not a verified deployment or completed M1.
-
-### Integration fix record, 2026-09-26, before the successful smoke
-
-Historical failures supplied by the main session, not reproduced by this local implementation session:
-
-- Image `physio-gvhmr:ee960bb` on the Arch RTX 3070, driver `615.71.09`, torch `2.3.0+cu121`, pycolmap `4.2.0`; all five approved assets are hash-verified and installed. The previously reported 31 container tests passed before these fixes.
-- The public upstream tennis demo failed strict tracking with three to four people in every frame. That rejection is correct; identity rules are unchanged.
-- Public HuggingFace `LittleFrog/GVHMR` example `examples/cxk.mp4` passed tracking, ViTPose and HMR2 feature extraction, then failed in `solver_two_view.py` at line 105 because `answer.cam2_from_cam1` was `None`.
-- A separate load diagnostic confirmed `register_store_gvhmr(); compose('demo')` fails with missing config `model/gvhmr/gvhmr_pl_demo`. No completed prediction or geometry result had been supplied at that point.
-
-Local source review at `/tmp/gvhmr-runtime-inspection`, revision `ee960bb6e2ea2d381aa97f08e9b71ef320b624b1`, confirmed that the general store imports the training model but not the demo model. The upstream demo imports `DemoPL` before composition. `load_demo_model()` now follows that order and retains nonrecursive instantiation, checkpoint loading, evaluation mode and CUDA placement.
-
-The subsequent path was traced through `demo.yaml`, `Pipeline`, `EnDecoder`, `SmplxLiteV437Coco17`, `make_smplx('supermotion')` and `BodyModelSMPLX`. The network and endecoder registrations are in the general store. Pipeline instantiation is explicit in the config. The reduced body model reads the mounted neutral SMPL-X asset and upstream source-tree support tensors; the full export wrapper reads the same body-asset directory and supplies batch-sized defaults for unfitted fields. No additional registration or asset-path mismatch was established by this inspection. That inspection established source compatibility only. Subsequent actual loading, forward execution and prediction are recorded below; visual geometry validation remains outstanding.
-
-`CameraMotionSolver` retains the pinned upstream pycolmap backend's camera/options, correspondence construction, pose conversion and SimpleVO serial accumulation. It checks only the reported no-relative-pose state before matrix access and raises an actionable `ValueError`. It does not catch unrelated estimator/API failures, synthesize poses, relax tracking, change sampling or switch to static mode. Serial execution is explicit because this adapter does not implement the upstream parallel solver cloning interface. The existing CLI reports the failure and does not publish `handoff.json`.
-
-Changed files for this fix are `processing/reconstruction/gvhmr.py`, `processing/reconstruction/GPU_SETUP.md`, `tests/ml/test_gvhmr.py` and `tests/ml/test_runtime.py`. Shared documentation and analysis files remain outside scope. Branch/base remain `codex/mohammad-ml` at `ab5bafa1afe78c9ea4f1b8d49929a6f43cbe12f7`.
-
-Local commands and outcomes:
-
-- `python3 -m unittest discover -s tests/ml -v`: baseline 67 tests, 65 passed and two PyAV skips; after the fix 72 tests, 70 passed and the same two skips. Discovery includes other owners' existing exercise/foot tests; those files were not changed.
-- `python3 -m unittest discover -s tests/ml -p test_gvhmr.py -v`: four expected missing-symbol errors before implementation, then four passed. Tests cover demo registration/composition/load order, unchanged successful VO conversion/settings, missing-pose rejection and propagation of unrelated failures. These use mocked dependency boundaries, not CUDA.
-- The added CLI failure regression verifies preserved source/preparation files, a nonzero result and no completion marker after camera-motion failure.
-- `python3 -m compileall -q processing/reconstruction tests/ml/test_gvhmr.py tests/ml/test_runtime.py`: passed.
-- `python3 -m processing.reconstruction.runtime --help`: passed without importing GPU dependencies.
-
-No GPU, network or remote commands, downloads, credentials, commits or pushes were used in this fix session. No agents were spawned. A cohesive local self-review covered registration through export and failure publication. The main session subsequently reported independent approval of these integration changes. That approval does not establish final cross-workstream or product validation.
+The public upstream tennis demo failed strict tracking because it contained
+multiple people. The `LittleFrog/GVHMR` example `examples/cxk.mp4` failed
+camera-motion estimation because pycolmap returned no relative pose. The adapter
+reports that failure without a static-camera fallback or completion manifest.
+A demo-model registration fix preceded the successful run below.
 
 ### Final public WHAM smoke evidence, 2026-09-26
 
-This evidence-only update read local copies of `handoff.json`, `provenance.json`, `tests-container.log`, `runtime-freeze.txt` and `run-001.log` under `/tmp/physio-gpu-verification`. The main session performed the worker operations and independent artifact verification. This editing session did not run network or GPU commands, download assets or repeat inference.
+The recorded run used the image identified above with updated source mounted
+read-only, network disabled, nonroot execution, and external model assets.
+The reconstruction container exited with code 0. Historical records included
+`handoff.json`, `provenance.json`, `tests-container.log`, `runtime-freeze.txt`,
+and `run-001.log`. Those private run files are not included in this repository.
 
-The main session used updated `gvhmr.py` through the source bind mount in the same `physio-gvhmr:ee960bb` image identified above, with network disabled, a read-only container, nonroot execution and approved external assets. Container `physio-wham-smoke-001` exited 0. Output is `/home/bader/physio-reconstruction/public-wham-smoke/output/run-001`. Remote evidence remains under `/home/bader/physio-reconstruction/public-wham-smoke/` as `run-001.log`, `runtime-freeze.txt`, `tests-container.log` and `container-inspect.json`. The inspect file was not among the local evidence copies read here.
-
-The public examples archive came from WHAM's official [fetch_demo_data.sh](https://github.com/yohanshin/WHAM/blob/main/fetch_demo_data.sh), documented Drive ID `1KjfODCcOUm_xIMLLR54IcjJtf816Dkc7`. The main session reported an 88.2 MB download and safe extraction of only `examples/drone_video.mp4` and `examples/drone_calib.txt`. Archive SHA-256 is `8c23111f1ef92eec644da02406704d4ec6e13281046676d699a93e7b7ffb4fee`. This is a public smoke fixture, not participant evaluation data or evidence of redistribution rights.
+The public examples archive came from WHAM's official [fetch_demo_data.sh](https://github.com/yohanshin/WHAM/blob/main/fetch_demo_data.sh), documented Drive ID `1KjfODCcOUm_xIMLLR54IcjJtf816Dkc7`. The recorded archive download was 88.2 MB. Extraction included only `examples/drone_video.mp4` and `examples/drone_calib.txt`. Archive SHA-256 is `8c23111f1ef92eec644da02406704d4ec6e13281046676d699a93e7b7ffb4fee`. This is a public smoke fixture, not participant evaluation data or evidence of redistribution rights.
 
 The original 22.12-second, 664-frame video was retained unchanged, SHA-256 `0da55210a305c3c75caa732c46b7330bb3d4e39ebeb9bc3af1e2b100dd8990c1`. The explicitly identified derivative used video stream-copy of approximately the first eight seconds, with no crop, resize or explicit frame-rate conversion. It has 242 decoded frames at 1920 by 1080 pixels, with last decoded PTS 8.041366667 seconds. Derivative SHA-256 is `c010567f80e5813c2d1e2811510062dcf9de5a9190a7084c3e253b75ed11b895`.
 
-The synthetic sidecar uses decoder PTS with offset zero. It does not verify a Quest capture clock. Provided intrinsics from `drone_calib.txt` use focal lengths 1321 pixels on both axes and principal point 960, 540 pixels, marked estimated because calibration accuracy was not independently verified. Upright, unmirrored pinhole imagery and no distortion were assumed only for this smoke; actual lens distortion is unknown. Capture labels are fixture placeholders, not measured annotations. Sidecar SHA-256 is `a078ed72ab70c6deef9bfc5c4e523ca7e58bedbde4a9c0ae569ec9430fff1aa3`.
+The synthetic sidecar uses decoder PTS with offset zero. It does not verify a Quest capture clock. Provided intrinsics from `drone_calib.txt` use focal lengths 1321 pixels on both axes and principal point 960, 540 pixels, marked estimated because calibration accuracy was not independently verified. Upright, unmirrored pinhole imagery and no distortion were assumed only for this smoke. Actual lens distortion is unknown. Capture labels are fixture placeholders, not measured annotations. Sidecar SHA-256 is `a078ed72ab70c6deef9bfc5c4e523ca7e58bedbde4a9c0ae569ec9430fff1aa3`.
 
-Tracking, ViTPose, HMR2 features, SIFT/pycolmap moving-camera estimation, real GVHMR prediction and native geometry export all completed. The manifest records 242 fitted frames, 10,475 vertices, 20,908 triangles and 22 joints, with finite fitted estimates and retained root translation. The main session independently checked byte sizes and SHA-256 for all eight inventoried artifacts. This update inspected the manifest, not the remote binary arrays. Neither finite arrays nor matching hashes establish visual alignment or anatomical correctness.
+Tracking, ViTPose, HMR2 features, moving-camera estimation with SIFT and pycolmap, real GVHMR prediction and native geometry export all completed. The manifest records 242 fitted frames, 10,475 vertices, 20,908 triangles and 22 joints, with finite fitted estimates and retained root translation. The recorded verification checked byte sizes and SHA-256 for all eight inventoried artifacts. Neither finite arrays nor matching hashes establish visual alignment or anatomical correctness.
 
 Manifest durations, rounded to milliseconds:
 
@@ -317,51 +275,40 @@ The 58.623-second result is not final-capture-to-loaded-replay latency. It exclu
 
 The manifest reports torch-visible device memory of 8,268,611,584 bytes, peak torch allocation of 2,811,469,824 bytes and peak torch reservation of 2,963,275,776 bytes. Allocation and reservation are torch allocator measurements, not entire-device peak VRAM or peak host RAM. Success establishes resource fit only for this derivative and configuration, not the full original or the configured maximum input.
 
-The freeze and manifest confirm torch `2.3.0+cu121`, torchvision `0.18.0+cu121`, PyAV `13.0.0`, NumPy `1.23.5`, SMPL-X `0.1.28`, pycolmap `4.2.0` and ultralytics `8.2.42`. The freeze also records OpenCV `4.10.0.84`, PyTorch3D `0.7.6` and yacs `0.1.8`. Upstream revision remains `ee960bb6e2ea2d381aa97f08e9b71ef320b624b1`. The manifest records all five asset hashes and four adapter-source hashes; the executed `gvhmr.py` hash is `1c1c8d547d4a9b5e3e38e5c761f006018411e53bbc8fa634ced54a6dcf44533a`.
+The freeze and manifest confirm torch `2.3.0+cu121`, torchvision `0.18.0+cu121`, PyAV `13.0.0`, NumPy `1.23.5`, SMPL-X `0.1.28`, pycolmap `4.2.0` and ultralytics `8.2.42`. The freeze also records OpenCV `4.10.0.84`, PyTorch3D `0.7.6` and yacs `0.1.8`. Upstream revision remains `ee960bb6e2ea2d381aa97f08e9b71ef320b624b1`. The manifest records all five asset hashes and four adapter-source hashes. The executed `gvhmr.py` hash is `1c1c8d547d4a9b5e3e38e5c761f006018411e53bbc8fa634ced54a6dcf44533a`.
 
-Verification outcomes supplied by the main session:
+Recorded verification outcomes:
 
-- `python -m unittest discover -s /tests -v`: 36 reconstruction tests passed in 0.388 seconds, zero skips, including both real PyAV tests. The local copied log confirms this outcome.
-- `python3 -m unittest discover -s tests/ml -v`: combined local suite, 72 tests, 70 passed and two PyAV skips, as recorded in the integration fix record.
-- Separate actual `load_demo_model()` and neutral `make_smplx` forward execution succeeded after the import fix. This diagnostic outcome is supplied by the main session; its separate log was not included in the local evidence set.
-- Full inference completed and published `handoff.json`; the run log records checkpoint loading and completed preprocessing. The successful WHAM run does not erase the tennis identity rejection or establish that `cxk.mp4` now passes VO.
+- `python -m unittest discover -s /tests -v`: 36 reconstruction tests passed in 0.388 seconds, zero skips, including both real PyAV tests. This is a historical test result.
+- Full inference completed and published `handoff.json`. The successful WHAM run does not establish that the rejected tennis or `cxk.mp4` inputs pass.
 
 ### Current integration and remaining proof
 
-The original public-run sidecar contains legacy extra `smoke_test_provenance` and
-lacks required `capture.gaps`. Production validation rejects it. Do not rewrite the
-original run's inputs, hashes or history. A separate strict sidecar with explicit
-media mapping and a separate adaptation-provenance record has been prepared for
-a **new** GPU run. Completion is pending interactive Docker access; see the shared
-handoff. The original run above does not prove the current adapter executed.
+The historical sidecar contains legacy `smoke_test_provenance` and lacks
+required `capture.gaps`, so production validation rejects it. Preserve its inputs
+and hashes. A current service run requires a separate valid capture sidecar with
+explicit media mapping. The historical geometry alone does not prove that path.
 
-The service, native-to-Unity exporter, C# importer and source evidence UI are now
-implemented and tested as components. Inspect real source video and exported
-body/skeleton together, including root motion, camera rotation, handedness and a
-known asymmetric movement. Then repeat with a consented Quest take, verified
-camera/mux mapping and an explicit calibration policy. Measure final capture
-through loaded replay, including transfers and loading.
+The production pipeline launches a fresh local reconstruction command per take.
+The persistent and streaming experiments below do not install a resident service.
+Native scale remains estimated. registration between Quest and model coordinates, anatomical alignment,
+clinical assessment, held-out-person evaluation, and capture-to-loaded-replay
+latency require separate evidence. See [project status](../../docs/STATUS.md).
 
-Native scale remains estimated; there is no verified Quest/world registration,
-visual/anatomical validation, clinical validation or held-out-person evaluation.
-ELK/RTK findings and automated foot assessment remain incomplete. The microscope
-implementation has not yet produced an accepted real Quest result. M1 and the
-required complete product flow remain incomplete.
-
-## Persistent FP32 experiment, September 27
+## Persistent FP32 experiment, September 27, 2026
 
 `experiments/persistent_inference/` contains the GPU-tested optimization runner.
 It is separate from the production service, which still starts a fresh inference
 process. This publication does not enable Quest streaming or change that service.
 The fixture runner accepts the public WHAM drone and its supplied calibration,
 not arbitrary uploaded recordings. It splits the first eight seconds into four
-independent takes. Tracker and temporal state reset between those takes; do not
+independent takes. Tracker and temporal state reset between those takes. Do not
 concatenate their reconstructions as a validated continuous movement.
 
 The runner retains YOLO, ViTPose, HMR2 features, GVHMR and SMPL-X on CUDA. Each is
-constructed once and reused for all four takes. Detector prediction/tracking state
+constructed once and reused for all four takes. Detector prediction and tracking state
 is fresh per take. Checkpoint identity hashing occurs once per process. Images
-are resized to 960 by 540; expensive observations are computed at 15 Hz and held
+are resized to 960 by 540. Expensive observations are computed at 15 Hz and held
 on the 30 Hz model grid. Camera motion uses the full 30 Hz mapping. Omitted images
 are not identity-verified. Pose and feature batches remain two, with FP32 weights.
 CPU offload is an explicit separate mode, never an automatic OOM fallback.
@@ -374,18 +321,17 @@ Historical measurements are in `rtx3070-fp32.json`. On the RTX 3070:
   Four matching fresh processes took 84.948 seconds in total.
 - First output after process launch took 20.346 seconds. Preloading must finish
   before a request to avoid this startup delay.
-- Peak PyTorch allocation was 6,190,825,984 bytes; peak reservation was
+- Peak PyTorch allocation was 6,190,825,984 bytes. Peak reservation was
   6,423,576,576 bytes, about 5.98 GiB. These are not whole-device memory readings.
 - The shared fixture split took 4.478 seconds, outside those process times.
 
-The original run used shared reconstruction helpers from `20cf164`. Publication
-is based on current main with separate CPU verification. Original GPU evidence
-and its source-inventory digest are preserved, not attributed to a new run.
+The original run used shared reconstruction helpers from `20cf164`. Its source
+inventory and GPU measurements identify that historical run, not a fresh execution.
 All eight native artifact hashes were checked for each of the eight outputs.
-Camera-motion estimates differed between persistent and fresh-process runs;
-full 3D numerical equivalence and accuracy remain unproven. The historical
-`all_resident_fit_proven` field is hardcoded false; completed-segment counts,
-constructor/use counts and allocator measurements are the actual fit evidence.
+Camera-motion estimates differed between persistent and fresh-process runs.
+Full 3D numerical equivalence and accuracy remain unproven. The historical
+`all_resident_fit_proven` field is hardcoded false. Completed-segment counts,
+constructor and use counts and allocator measurements are the actual fit evidence.
 That initial publication did not include FP16, larger batches or streaming.
 The later bounded experiment below adds those controls without changing the
 production service.
@@ -399,17 +345,17 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$PWD" \
 
 Pinned Ultralytics source-body checks require installed version 8.2.42. Without
 it those checks explicitly skip. An operator may instead set
-`PHYSIO_ULTRALYTICS_SOURCE` to an inspected 8.2.42 `ultralytics` package directory;
-file hashes are checked against the committed identity inventory before execution.
+`PHYSIO_ULTRALYTICS_SOURCE` to an inspected 8.2.42 `ultralytics` package directory.
+File hashes are checked against the committed identity inventory before execution.
 The remaining tests use CPU stand-ins and do not prove GPU correctness.
 
 Run in the existing model image with the same approved assets. Set `PROJECT`,
 `ASSETS`, `INPUT` and `OUTPUT` to absolute paths as above. `INPUT` must contain
-`drone_video.mp4` and `drone_calib.txt`; obtain them under their own terms, never
+`drone_video.mp4` and `drone_calib.txt`. Obtain them under their own terms, never
 commit them. The new `resident-001` directory must not already exist.
 
 ```sh
-sudo docker run --rm --gpus all --network none --read-only \
+docker run --rm --gpus all --network none --read-only \
   --cap-drop ALL --security-opt no-new-privileges \
   --user "$(id -u):$(id -g)" --memory 24g --cpus 8 --pids-limit 256 \
   --tmpfs /tmp:rw,nosuid,nodev,size=2g \
@@ -427,24 +373,24 @@ sudo docker run --rm --gpus all --network none --read-only \
 ```
 
 `benchmark.json` records the persistent run followed by four fresh-process
-controls. Each worker records stage timings, constructor/use counts, input and
+controls. Each worker records stage timings, constructor and use counts, input and
 asset identities, and failure diagnostics. A completed benchmark is not a live
 service, annotated-video output, Quest latency measurement or clinical result.
 
 ## Selected streaming experiment: 640px and 15 observations per second
 
 The selected defaults in `experiments/streaming_inference/experiment.py` are
-`640-15`, selective `weights-fp16`, and pose/feature batches of eight. This means
+`640-15`, selective `weights-fp16`, and pose and feature batches of eight. This means
 640 by 360 analysis images with 15 expensive observations per second. Original
-frame IDs and presentation times remain intact; the model and camera-motion grid
+frame IDs and presentation times remain intact. The model and camera-motion grid
 remain 30 Hz. Annotated playback retains the original rate. This does not change
 Quest capture settings or the production service command.
 
 The worker constructs all five models once and keeps them on the RTX 3070.
-Only ViTPose and HMR2 feature weights/forward passes use FP16. Decoding, detector,
+Only ViTPose and HMR2 feature weights and forward passes use FP16. Decoding, detector,
 GVHMR, body geometry and camera motion stay FP32. Autocast weight caching is
 explicitly disabled to avoid retaining two additional large weight copies.
-Failure is explicit; there is no automatic precision or static-camera fallback.
+Failure is explicit. There is no automatic precision or static-camera fallback.
 
 The experiment releases four chunks at two-second intervals. One tracker spans
 the whole take, and camera-motion pairs cross chunk boundaries. The overlap mode
@@ -454,7 +400,7 @@ fitted two-second bodies or claim concurrent GPU model replicas.
 
 On the public eight-second WHAM clip, the selected configuration completed all
 three scheduling modes. With CPU-VO overlap, native geometry was verified 2.626
-seconds after scheduled capture stop; the annotated MP4 was closed and decoded
+seconds after scheduled capture stop. The annotated MP4 was closed and decoded
 successfully after 3.560 seconds. Serial streaming took 3.790 seconds to verified
 video. Ninety observations completed before stop in both streaming modes. Each
 model was constructed once across three takes. Scheduling modes produced exactly
@@ -462,19 +408,18 @@ matching intermediate arrays and native geometry for this test.
 
 The after-stop control took 9.988 seconds, but ran first in its process and includes
 first-use effects. Do not attribute its full difference to scheduling. Initialization
-took 15.200 seconds before capture; this must finish before accepting work. Fixture
+took 15.200 seconds before capture. Initialization must finish before accepting work. Fixture
 creation, camera encoding, network transfer, service publication, download and Quest
 loading are excluded. The original source has 240 selected frames at 30000/1001 fps,
 so normal playback is 8.008 seconds while the capture-stop timing origin is eight
 seconds. These are one-source measurements, not latency or accuracy guarantees.
 
-The reviewed four-panel demo used 640px at **10** observations per second and
-960px at 15. The user selected 640px at **15**, then a separate GPU run verified
-that combination. Its compact evidence is `experiments/streaming_inference/rtx3070-640-15.json`.
+A historical four-panel demo used 640px at 10 observations per second and
+960px at 15. A separate GPU run measured 640px at 15. Its compact evidence is `experiments/streaming_inference/rtx3070-640-15.json`.
 No video, checkpoint, body-model asset or credential is included in Git.
 
 Run CPU checks from the project root. Without model dependencies, pinned-source
-checks skip explicitly; the GPU image must pass them without skips. An inspected
+checks skip explicitly. The GPU image must pass them without skips. An inspected
 GVHMR checkout can be supplied through `PHYSIO_GVHMR_SOURCE` for CPU source-body
 checks, alongside `PHYSIO_ULTRALYTICS_SOURCE` described above.
 
@@ -485,11 +430,11 @@ PYTHONDONTWRITEBYTECODE=1 python3 experiments/streaming_inference/cpu_tests.py \
 
 Run only on an otherwise idle GPU. Reuse the approved image, inputs and assets
 from the setup above. `OUTPUT` must be writable by the container user. Outputs are
-bounded beneath a writable copy of the streaming scripts; choose a new directory
+bounded beneath a writable copy of the streaming scripts. Choose a new directory
 for each run. The helper code and model files stay read-only.
 
 ```sh
-sudo docker run --rm --gpus all --network none --read-only \
+docker run --rm --gpus all --network none --read-only \
   --cap-drop ALL --security-opt no-new-privileges \
   --user "$(id -u):$(id -g)" --memory 24g --cpus 8 --pids-limit 256 \
   --tmpfs /tmp:rw,nosuid,nodev,size=2g \
@@ -515,7 +460,9 @@ sudo docker run --rm --gpus all --network none --read-only \
 ```
 
 The fixture adapter intentionally accepts the inspected public source, not
-arbitrary participant recordings. Two-second network ingestion and a persistent
-service lifecycle still need integration by the service/Quest owners. The GPU
-experiment produces native arrays, source-linked annotations and an MP4; it does
+arbitrary participant recordings. The service and Quest client do not yet integrate two-second network ingestion
+and a persistent service lifecycle. The GPU
+experiment produces native arrays, source-linked annotations and an MP4. It does
 not establish full Quest end-to-end behavior or clinical validity.
+
+The website benchmark reports a separate half-second-ingress run with a 2.2745-second median. The checked-in fixture releases four two-second chunks. The runner and raw files for that half-second run are absent, so its hashes identify historical evidence without making that run reproducible here.

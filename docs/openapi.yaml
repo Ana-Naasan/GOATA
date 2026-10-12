@@ -5,15 +5,16 @@ info:
   description: |
     Local transfer, job mechanics, and configured real inference are implemented.
     Without an inference command, accepted full-body captures fail with
-    PROCESSING_FAILED while preserving originals. No validated clinical model is claimed.
+    PROCESSING_FAILED while preserving originals. Historical barefoot jobs without
+    a replay can succeed with unavailable assessment. No validated clinical model is claimed.
     The Quest app owns patient profiles and history. This service processes one
     immutable capture bundle at a time and returns versioned artifacts. Display
     names are not uploaded. A successful job means its result was saved, not that
     every analysis was available or clinically validated.
 
     Require TLS outside loopback and a deployment-specific bearer token loaded
-    from the environment. Never commit the token or log authorization/media.
-    Demo authentication grants access to this deployment's jobs; it is not a
+    from the environment. Never commit the token or log authorization headers or media.
+    Demo authentication grants access to this deployment's jobs. It is not a
     production multi-clinic authorization system. Do not expose it publicly.
 
     Default hard limits: 512 MiB ZIP upload, 1 MiB manifest UTF-8, 1 GiB total
@@ -23,23 +24,24 @@ info:
     Check file signatures, declared size and SHA-256 before processing. Media
     signature checks do not prove decoding or source-frame alignment. A real
     inference adapter must validate those with bounded decoder resources before
-    model execution. ZIP64 and compression other than STORE/DEFLATE are rejected.
-    Sidecar/replay JSON is bounded to 16 MiB; total result output to 1 GiB.
+    model execution. Configured service inference requires the sidecar media
+    timestamp mapping and passes --pts-offset-ns 0 to the local command. ZIP64 and compression other than STORE or DEFLATE are rejected.
+    Sidecar and replay JSON is bounded to 16 MiB. Total result output is bounded to 1 GiB.
     One upload is validated at a time, with a 120-second receive deadline.
-    Multipart overhead is bounded to 64 KiB above ZIP+manifest limits; part
+    Multipart overhead is bounded to 64 KiB above ZIP+manifest limits. Part
     headers are bounded to 16 KiB. Private storage defaults to an 8 GiB budget
     with space reserved before acceptance. Configure and record changed limits.
 
     Persist accepted job state before responding. On restart mark any pending or
-    running job failed with WORKER_INTERRUPTED; preserve source evidence and
+    running job failed with WORKER_INTERRUPTED. Preserve source evidence and
     previous successful results. Never silently resume half-written output.
     Publish result artifacts atomically before marking the job succeeded.
 
     The 60-120 second capture-to-loaded-replay target includes upload, processing,
-    download and Quest loading; it is a benchmark target, not a service guarantee.
+    download and Quest loading. It is a benchmark target, not a service guarantee.
 servers:
   - url: /
-    description: Same origin; configure the actual HTTPS processing host in the app.
+    description: Same origin. Configure the actual HTTPS processing host in the app.
 security:
   - bearerAuth: []
 tags:
@@ -52,7 +54,7 @@ paths:
       operationId: createJob
       summary: Validate and accept a capture bundle
       description: |
-        Accept one active job per deployment. A second distinct job returns 429;
+        Accept one active job per deployment. A second distinct job returns 429.
         pending is the persisted pre-start state, not an unbounded queue.
         Multipart has a UTF-8 JSON text form field and a ZIP file. Parse manifest
         as CaptureManifest and run its cross-reference checks before acceptance.
@@ -62,11 +64,11 @@ paths:
         Scope idempotency to this deployment and the supplied key. Store a digest
         of server-canonical manifest JSON plus the ordered member names, sizes and
         verified hashes (ZIP container bytes need not match). Canonicalize after
-        validation using sorted object keys, compact JSON and UTF-8; only the
+        validation using sorted object keys, compact JSON and UTF-8. Only the
         service computes this digest. The same key and
         same contents returns the original Job, even if it is now terminal.
         The same key with different contents returns 409. Reprocessing requires
-        a new key and creates a new job/result; it never overwrites a saved result.
+        a new key and creates a new job and result. It never overwrites a saved result.
         Check an existing idempotency record before rejecting for worker capacity.
       parameters:
         - name: Idempotency-Key
@@ -87,7 +89,7 @@ paths:
                   maxLength: 1048576
                   contentMediaType: application/json
                   contentSchema: {$ref: '#/components/schemas/CaptureManifest'}
-                  description: JSON text; validate explicitly after form parsing.
+                  description: JSON text. Validate explicitly after form parsing.
                 media:
                   type: string
                   format: binary
@@ -104,28 +106,28 @@ paths:
               description: Relative /v1/jobs/{job_id} path.
             Retry-After:
               schema: {type: integer, minimum: 1}
-              description: Suggested polling delay in seconds; initially 2.
+              description: Suggested polling delay in seconds. Initially 2.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Job'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '409':
-          description: IDEMPOTENCY_CONFLICT; the key belongs to different input.
+          description: IDEMPOTENCY_CONFLICT. The key belongs to different input.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorEnvelope'}
         '413':
-          description: UPLOAD_TOO_LARGE; a documented upload/extraction limit exceeded.
+          description: UPLOAD_TOO_LARGE. An upload or extraction limit was exceeded.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorEnvelope'}
         '422':
-          description: VALIDATION_ERROR; malformed JSON, unsafe ZIP or invalid capture.
+          description: VALIDATION_ERROR. The request contains malformed JSON, an unsafe ZIP, or an invalid capture.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorEnvelope'}
         '429':
-          description: CAPACITY_EXCEEDED; worker occupied or configured request limit reached.
+          description: CAPACITY_EXCEEDED. The worker is occupied or a configured request limit was reached.
           headers:
             Retry-After:
               schema: {type: integer, minimum: 1}
@@ -150,7 +152,7 @@ paths:
           headers:
             Retry-After:
               schema: {type: integer, minimum: 1}
-              description: Polling delay for pending/running jobs; omit for terminal jobs.
+              description: Polling delay for pending or running jobs. Omit for terminal jobs.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Job'}
@@ -166,20 +168,20 @@ paths:
       summary: Fetch the completed result manifest
       description: |
         Available only for succeeded jobs. Return 409 NOT_READY for pending or
-        running; 409 PROCESSING_FAILED for failed. Check feature availability
+        running. Return 409 PROCESSING_FAILED for failed. Check feature availability
         before showing findings, replay or microscope actions. A new processing
         attempt gets a new result_id. The app validates all IDs before associating
-        the downloaded result with its local patient/session.
+        the downloaded result with its local patient and session.
       responses:
         '200':
-          description: Immutable result manifest; binary data is fetched separately.
+          description: Immutable result manifest. Binary data is fetched separately.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ResultManifest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409':
-          description: Result is not available; the error identifies why.
+          description: Result is not available. The error identifies why.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorEnvelope'}
@@ -200,7 +202,7 @@ paths:
         Reject IDs from another job. Never accept a filesystem path or external
         URL. Serve only complete artifacts. The client verifies byte count and
         SHA-256 before moving its temporary download into the saved session.
-        No range/download-resume implementation is required for this first demo.
+        No range requests or resumed downloads is required for this first demo.
       responses:
         '200':
           description: Bytes with the media type declared in Artifact.
@@ -219,7 +221,7 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409':
-          description: NOT_READY or PROCESSING_FAILED; job has no published artifacts.
+          description: NOT_READY or PROCESSING_FAILED. The job has no published artifacts.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorEnvelope'}
@@ -229,7 +231,7 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      description: Per-deployment secret; configure separately from source control.
+      description: Per-deployment secret. Configure separately from source control.
   parameters:
     JobId:
       name: job_id
@@ -238,7 +240,7 @@ components:
       schema: {type: string, format: uuid}
   responses:
     Unauthorized:
-      description: UNAUTHORIZED; missing or invalid bearer token.
+      description: UNAUTHORIZED. The bearer token is missing or invalid.
       headers:
         WWW-Authenticate:
           schema: {type: string, const: Bearer}
@@ -246,12 +248,12 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/ErrorEnvelope'}
     NotFound:
-      description: NOT_FOUND; unknown job or artifact, including wrong-job artifact IDs.
+      description: NOT_FOUND. The job or artifact is unknown, including artifact IDs from another job.
       content:
         application/json:
           schema: {$ref: '#/components/schemas/ErrorEnvelope'}
     InternalError:
-      description: INTERNAL_ERROR; sanitized message, with request_id for local diagnostics.
+      description: INTERNAL_ERROR. The message is sanitized and includes request_id for local diagnostics.
       content:
         application/json:
           schema: {$ref: '#/components/schemas/ErrorEnvelope'}
@@ -270,7 +272,7 @@ components:
         member:
           type: string
           pattern: '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.(mp4|json)$'
-          description: Flat ZIP member; UUID filename only. Check extension against actual content.
+          description: Flat ZIP member with a UUID filename. Check extension against actual content.
         sha256: {$ref: '#/components/schemas/Sha256'}
         byte_size: {type: integer, minimum: 1, maximum: 1073741824}
     CaptureManifest:
@@ -279,21 +281,21 @@ components:
       required: [schema_version, session_id, patient_id, test_type, protocol_id, protocol_version, capture_completed_at, takes]
       description: |
         IDs are UUIDs generated by the Quest app. All take IDs and ZIP member
-        names must be unique. Every file must be referenced exactly once; every
+        names must be unique. Every file must be referenced exactly once. Every
         reference must resolve. Video references must be MP4 and frame_metadata
         references JSON, using the sidecar format specified in SPEC.md.
-        The JSON sidecar preserves original frame IDs/PTS, image dimensions,
-        intrinsics, available camera poses/tracking validity and adapter version.
+        The JSON sidecar preserves original frame IDs and PTS, image dimensions,
+        intrinsics, available camera poses, tracking validity, and adapter version.
         Never substitute decode frame number for original capture timing.
         Optional sidecar.media records an explicit indexed_presentation_time_us
         array binding verified mux timestamps to the preserved original frames.
         The decoder verifies every timestamp before accepting that mapping.
 
-        For elk/rtk/walking require a replay_take_id referencing a full_body take in this
-        manifest. For barefoot require at least one foot_closeup; optional replay
+        For elk, rtk, and walking, require a replay_take_id referencing a full_body take in this
+        manifest. For barefoot require at least one foot_closeup. Optional replay
         must still reference a full_body take explicitly included here for this
-        same patient. Independent repetitions remain separate takes; do not fuse
-        their motion into an averaged performance. Verify protocol/test mapping.
+        same patient. Independent repetitions remain separate takes. Do not fuse
+        their motion into an averaged performance. Verify protocol and test mapping.
       properties:
         schema_version: {type: string, const: '1.0'}
         session_id: {type: string, format: uuid}
@@ -302,7 +304,7 @@ components:
         protocol_id:
           type: string
           enum: [elk, rtk, walking, barefoot]
-          description: Must match test_type. Provisional capture identifier; not an evaluated clinical protocol.
+          description: Must match test_type. Provisional capture identifier. This is not an evaluated clinical protocol.
         protocol_version: {type: string, const: '1.0'}
         capture_completed_at: {type: string, format: date-time}
         replay_take_id: {type: string, format: uuid}
@@ -361,7 +363,7 @@ components:
         duration_s:
           type: number
           exclusiveMinimum: 0
-          description: Recording duration; at least the last original PTS minus the clock origin. May include the final frame's presentation duration.
+          description: Recording duration of at least the last original PTS minus the clock origin. May include the final frame's presentation duration.
         video: {$ref: '#/components/schemas/InputFile'}
         frame_metadata: {$ref: '#/components/schemas/InputFile'}
       allOf:
@@ -377,10 +379,10 @@ components:
       additionalProperties: false
       required: [job_id, session_id, patient_id, test_type, status, stage, created_at, updated_at]
       description: |
-        Legal transitions pending -> running -> succeeded|failed, plus pending ->
-        failed for interruption. Terminal jobs are immutable. Stages may be
-        skipped only when irrelevant to the selected test. failed keeps its last
-        stage and requires error; succeeded requires stage complete and result_id.
+        Jobs move from pending to running, then to succeeded or failed. An
+        interrupted pending job moves directly to failed. Terminal jobs are immutable. Stages may be
+        skipped only when irrelevant to the selected test. A failed job keeps its last
+        stage and requires error. A succeeded job requires stage complete and result_id.
       properties:
         job_id: {type: string, format: uuid}
         session_id: {type: string, format: uuid}
@@ -396,7 +398,7 @@ components:
           type: object
           additionalProperties: false
           required: [completed, total, unit]
-          description: Optional actual counters for this stage; completed <= total. Omit if unknown.
+          description: Optional actual counters for this stage. completed <= total. Omit if unknown.
           properties:
             completed: {type: integer, minimum: 0}
             total: {type: integer, minimum: 1}
@@ -425,10 +427,10 @@ components:
       additionalProperties: false
       required: [schema_version, result_id, job_id, session_id, patient_id, test_type, created_at, pipeline_version, protocol_id, protocol_version, input_digest, validation_status, methods, features, findings, microscopes, artifacts]
       description: |
-        Verify IDs/test/protocol against the accepted capture. Every artifact ID
-        must resolve within this result; all findings must reference an input
+        Verify IDs, test, and protocol against the accepted capture. Every artifact ID
+        must resolve within this result. All findings must reference an input
         take and valid original frames. An empty findings array is not a passing
-        clinical assessment. Each requested feature reports availability/reason.
+        clinical assessment. Each requested feature reports availability and a reason.
         Full-body methods must not consume foot_closeup as full-body evidence.
         Original recording condition remains attached to each finding.
         Only evidence whose take_id equals replay.source_take_id may seek the 3D
@@ -502,9 +504,9 @@ components:
       additionalProperties: false
       required: [method_id, name, version, settings_artifact_id]
       description: |
-        Unique method_id per result. Pin code/checkpoint version and retain exact
+        Unique method_id per result. Pin code and checkpoint versions and retain exact
         processing settings as a JSON artifact. Use method version for algorithms
-        without learned weights; do not invent a checkpoint hash.
+        without learned weights. Do not invent a checkpoint hash.
       properties:
         method_id: {type: string, minLength: 1, maxLength: 80}
         name: {type: string, minLength: 1, maxLength: 100}
@@ -516,10 +518,10 @@ components:
       additionalProperties: false
       required: [name, status, detail]
       description: |
-        Unique names. Include replay+movement for elk/rtk/walking, foot for barefoot and
-        microscope for each test. Version 1.1 also requires observations; available
+        Feature names are unique. Include replay and movement for elk, rtk, and walking, foot for barefoot and
+        microscope for each test. Version 1.1 also requires observations. Available
         means at least one estimated observation, never a clinical assessment.
-        For other features, available means an artifact/analysis exists;
+        For other features, available means an artifact or analysis exists.
         validation_status remains research_demo_unvalidated. Omit replay from a
         foot-only result. Reasons must distinguish poor capture, unsupported
         method, missing calibration and processing failure.
@@ -533,9 +535,9 @@ components:
       required: [take_id, start_s, end_s, first_frame_id, last_frame_id, condition, quality]
       description: |
         Source interval [start_s,end_s] in seconds from the take's first original
-        PTS; end_s >= start_s and <= source duration. Frame IDs identify original
+        PTS. end_s >= start_s and <= source duration. Frame IDs identify original
         captured frames, not resampled replay indices. Preserve gaps. Verify the
-        IDs/times against the sidecar. quality is capture quality, not diagnostic
+        IDs and times against the sidecar. quality is capture quality, not diagnostic
         confidence. Never convert standing evidence into a gait claim.
       properties:
         take_id: {type: string, format: uuid}
@@ -556,11 +558,11 @@ components:
       additionalProperties: false
       required: [finding_id, method_id, label_code, label, explanation, region, side, evidence, limitations, metrics]
       description: |
-        label_code must belong to this protocol/model's evaluated label set.
+        label_code must belong to this evaluated label set for this protocol and model.
         Do not generate exercise corrections or treatment recommendations.
         With insufficient evidence produce an unavailable Feature instead of an
         unsupported finding. highlight_joint_names, if present, must exist in
-        the replay's joint map; a foot finding does not move skeleton joints.
+        the replay's joint map. A foot finding does not move skeleton joints.
       properties:
         finding_id: {type: string, format: uuid}
         method_id: {type: string, minLength: 1, maxLength: 80}
@@ -589,16 +591,16 @@ components:
       additionalProperties: false
       required: [observation_id, method_id, quantity_code, label, explanation, region, side, evidence, limitations, metrics]
       description: |
-        Version 1.1 estimated geometry only; no diagnosis, correctness label or
-        clinical confidence. A finite fitted joint is not a visibility score.
+        Version 1.1 contains estimated geometry only. It does not contain diagnoses,
+        correctness labels, or clinical confidence. A finite fitted joint is not a visibility score.
         Bind to this result's selected replay source, valid original frames and
-        exact endpoint times; never bridge a capture/replay gap. Quantity must
-        match test_type; knee quantities require left/right side, torso
-        quantities not_applicable. All metrics are finite pose-estimated angles
+        exact endpoint times. Never bridge a gap in the capture or replay. Quantity must
+        match test_type. Knee quantities require left or right side, torso
+        quantities require not_applicable. All metrics are finite pose-estimated angles
         in degrees with no physical-scale claim. Methods retain settings artifacts.
         Independently of optional highlights, torso quantities require valid left
-        and right hip/shoulder joints; knee quantities require the named side's
-        hip/knee/ankle. Every sample in the evidence interval must be valid.
+        and right hip and shoulder joints. Knee quantities require the named side's
+        hip, knee, and ankle. Every sample in the evidence interval must be valid.
       properties:
         observation_id: {type: string, format: uuid}
         method_id: {type: string, minLength: 1, maxLength: 80}
@@ -642,7 +644,7 @@ components:
       required: [name, value, unit, basis, scale_status]
       description: |
         Finite values only, calculated from original unamplified evidence.
-        Replay resizing/speed changes never modify them. Unknown values are
+        Replay resizing and speed changes never modify them. Unknown values are
         omitted, never encoded as zero. A model score is not a clinical probability.
       properties:
         name: {type: string, minLength: 1, maxLength: 100}
@@ -661,10 +663,10 @@ components:
       additionalProperties: false
       required: [microscope_id, method_id, evidence, region, side, status, detail]
       description: |
-        Available only after checking camera-motion/noise quality. Original and
+        Available only after checking camera-motion and noise quality. Original and
         amplified videos use this result's same source interval and crop.
         Settings artifact records crop, temporal band, amplification amount,
-        stabilization and source frame mapping. Amplified pixels are illustrative;
+        stabilization and source frame mapping. Amplified pixels are illustrative.
         they never replace measurements or the main hologram's motion.
       properties:
         microscope_id: {type: string, format: uuid}
@@ -694,16 +696,16 @@ components:
       description: |
         Artifact IDs are unique within the result and server-generated. The
         replay_manifest role contains replay_manifest.json as defined in SPEC.md.
-        Replay binaries carry fixed topology, timestamped vertices/joints and
-        explicit validity data; they contain no executable serialization.
+        Replay binaries carry fixed topology, timestamped vertices and joints and
+        explicit validity data. They contain no executable serialization.
         The client rejects decoded replay bundles over 256 MiB before allocation.
-        This decoded limit includes every required array/mask, not just ZIP size.
+        This decoded limit includes every required array and mask, not just ZIP size.
       properties:
         artifact_id:
           type: string
           format: uuid
           pattern: '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
-          description: Server-generated canonical lowercase UUID; use this exact ID for download.
+          description: Server-generated canonical lowercase UUID. Use this exact ID for download.
         role:
           type: string
           enum: [replay_manifest, replay_binary, evidence_video, microscope_original, microscope_amplified, processing_settings, quality_report]
@@ -724,7 +726,7 @@ components:
       additionalProperties: false
       required: [code, message, retryable]
       description: |
-        Sanitized user-facing text only; no stack traces, paths, tokens, patient
+        Sanitized user-facing text only. It must not contain stack traces, paths, tokens, patient
         names or raw media. retryable means retry may help after the stated cause
         changes, not an instruction for an infinite automatic resubmission loop.
       properties:

@@ -4,7 +4,7 @@
   </a>
 </p>
 
-<h1 align="center">N3 Goata</h1>
+<h1 align="center">GOATA</h1>
 
 <p align="center">Record a movement. Pause it in 3D. Walk around the moment.</p>
 
@@ -13,17 +13,17 @@
   <a href="#watch-the-demo">Watch the demo</a> ·
   <a href="docs/ENGINEERING.md">Engineering</a> ·
   <a href="docs/DEVELOPMENT.md">Developer guide</a> ·
-  <a href="docs/HANDOFF.md">Project status</a>
+  <a href="docs/STATUS.md">Project status</a>
 </p>
 
 <p align="center"><code>Hack the Hill III</code> · <code>Meta Quest 3</code> · <code>Unity + C#</code> · <code>Python + CUDA</code></p>
 
-Goata turns a Quest recording into a fitted body and skeleton that a practitioner
-can inspect in mixed reality. Slow a movement down, view it from another angle,
-and trace estimated observations back to the original recording.
+GOATA lets a practitioner record movement with Quest 3 and inspect a fitted body
+and skeleton in mixed reality. Pause a movement, change the viewing angle, and
+open the original recording at an observation's source moment.
 
-This repository contains **Physio Motion Replay**, the capture, processing, and
-replay implementation behind Goata. It is a research prototype. Its movement
+The application and processing package use the name Physio Motion Replay.
+GOATA is a research prototype. Its movement
 estimates and demo scores are not validated clinical findings.
 
 ## Watch the demo
@@ -54,10 +54,12 @@ Quest replay footage at 01:07.5 to 01:10.0, with the original room view intact.
 | KERAAL RTK | Seated torso rotation. Estimated shoulder-to-pelvis rotation. |
 | Walking review | A full-body walking pass. Estimated knee flexion and torso inclination. |
 
-The **Goata Score** combines deterministic demo rules into a 0–100 summary.
-Its details retain the contributing observations and source times. The score is
-not a clinical assessment. Historical barefoot sessions remain readable, but
-Walking review replaces barefoot capture for new tests.
+The Goata Score combines deterministic demo rules into a score from 0 to 100.
+The viewer shows the score and a summary. The current interface does not expose
+the full calculation details. The score is not a clinical assessment.
+
+Historical barefoot sessions remain readable. Walking review replaces barefoot
+capture for new tests.
 
 ## How a recording becomes a replay
 
@@ -74,29 +76,32 @@ The [processing contract](docs/openapi.yaml) is the shared interface between the
 Quest app and processing. [GPU setup](processing/reconstruction/GPU_SETUP.md)
 documents the model environment separately from the local Python environment.
 
-## Less waiting after capture
+## Inference experiments
 
-The team experimented with keeping models warm and processing input as it arrived.
-The [published benchmark](docs/media/benchmark.json) records the following local
-public-video experiment on an RTX 3070:
+The [checked-in streaming experiment](experiments/streaming_inference/rtx3070-640-15.json)
+uses an eight-second prerecorded input on an RTX 3070. With models already loaded,
+it measures the time from input stopping to a decode-verified annotated video:
 
-| Run | Measured wait |
-|---|---|
-| Original, after complete local input was accepted | 119.97 seconds until all output was ready |
-| Optimized, after the simulated capture ended | 2.27 seconds median until a decode-verified annotated video was ready |
+| Mode | Time after input stopped |
+|---|---:|
+| Start processing after input stops | 9.99 seconds |
+| Process arriving chunks in sequence | 3.79 seconds |
+| Process arriving chunks with camera-motion work on the CPU in parallel | 3.56 seconds |
 
-These clocks start at different points. The optimized run overlaps work with
-eight seconds of input, uses warmed models, and takes **10.27 seconds** from
-simulated capture start to verified video. It excludes Quest encoding, network
-transfer, headset loading and display, and one-time warmup. This is not a measured
-end-to-end Quest speed or a guarantee for other recordings.
+Input arrives in four two-second chunks. These results exclude model startup,
+Quest encoding, network transfer, and headset loading. The production processor
+starts a command for each reconstruction and does not use the streaming runner.
+
+The website's [2.27-second summary](docs/media/benchmark.json) describes a separate
+run with half-second chunks. Its runner and raw event files are not included here.
+The [engineering guide](docs/ENGINEERING.md#what-the-benchmark-measures) explains
+the distinction.
 
 ## What is verified, and what remains
 
-The [handoff](docs/HANDOFF.md) records Quest build and installation checks,
-authenticated connectivity, a saved Walking reconstruction, and deterministic
-source-linked observations. These are historical engineering checks, not a new
-device test performed for this README.
+The [project status](docs/STATUS.md) lists implemented behavior and remaining
+acceptance work. The code includes capture, saved patient history, reconstruction,
+replay, and source-linked movement observations.
 
 The remaining work includes:
 
@@ -113,7 +118,9 @@ module interfaces, data and coordinate mappings, job lifecycle, and verification
 limits. Use the [developer guide](docs/DEVELOPMENT.md) for local processing,
 configuration, request examples, and automated checks. Real reconstruction needs
 the separate [GPU setup](processing/reconstruction/GPU_SETUP.md). An unconfigured
-processor retains the recording and reports the failure instead of making up a replay.
+full-body reconstruction retains the recording and reports the failure. Historical
+barefoot-only jobs can complete with unavailable analysis because they do not
+require a replay.
 
 | Path | What is inside |
 |---|---|
@@ -121,13 +128,13 @@ processor retains the recording and reports the failure instead of making up a r
 | [`processing/`](processing/) | Uploads, persistent jobs, reconstruction, analysis, and replay export. |
 | [`tests/`](tests/) | Backend, contract, and model-adapter checks. |
 | [`experiments/`](experiments/) | Profiling and inference experiments, with their own evidence. |
-| [`design/`](design/quest-menu/README.md) | Design assets and interaction work. |
-| [`docs/`](docs/) | Specification, processing contract, handoff, and media provenance. |
+| [`design/`](design/quest-menu/README.md) | Archived mockups and an unused navigation prototype. |
+| [`docs/`](docs/) | Product requirements, implementation guides, status, and media sources. |
 
 [Product specification](docs/SPEC.md) ·
 [Engineering guide](docs/ENGINEERING.md) ·
 [Quest build guide](quest/README.md) ·
-[Team working rules](AGENTS.md) ·
+[Project status](docs/STATUS.md) ·
 [Media sources](docs/media/README.md)
 
 ## The team

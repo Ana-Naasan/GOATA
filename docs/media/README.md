@@ -9,7 +9,7 @@ to the app or evidence of new validation.
 | `n3-goata-banner.svg` | Static first frame of the same banner, with its image embedded. |
 | `demo-poster.jpg` | Unmodified [project-film poster](https://n3-goata.vercel.app/demo-poster.jpg?v=requested-edits), retrieved October 12, 2026. |
 | `demo.mp4` | Smaller copy of the [public project film](https://n3-goata.vercel.app/HtH-Demo-N3.mp4?v=requested-edits), included at the project owner's request. |
-| `benchmark.json` | Unmodified [published benchmark](https://n3-goata.vercel.app/benchmark.json), retrieved October 12, 2026. Historical local experiment, not a new benchmark run. |
+| `benchmark.json` | Unmodified [website benchmark summary](https://n3-goata.vercel.app/benchmark.json), retrieved October 12, 2026. The half-second-chunk runner and raw event files are not included in this repo. |
 
 The README links its poster to the website's player. It also links the local MP4
 directly, so readers can download the film with the repo. It does not depend on
@@ -17,8 +17,14 @@ an HTML video element surviving GitHub's Markdown rendering.
 
 The only video exception in `.gitignore` is `/docs/media/demo.mp4`. Original
 participant recordings remain excluded. The banner reuses only the already-public
-film; it introduces no new recordings. These files do not grant a project-wide
+film. It introduces no new recordings. These files do not grant a project-wide
 license to third-party assets.
+
+The website benchmark is separate from the checked-in
+[two-second-chunk experiment](../../experiments/streaming_inference/rtx3070-640-15.json).
+That experiment records 3.56 seconds after input stops to a decode-verified video.
+The website summary reports a 2.27-second median from a different run. Neither
+measurement includes the complete Quest capture-to-display path.
 
 ## Rebuild the banner
 
@@ -36,12 +42,12 @@ The generator resizes the full 16:9 picture to 960 × 540 and samples it at 12 f
 It adds an 88-pixel title strip above the footage.
 It does not crop the room view, replace the body, interpolate new motion, or
 change the excerpt's playback duration. The animation loops at the end of the
-excerpt; it is not a seamless movement cycle.
+excerpt, with a visible transition back to its first frame.
 
 Temporary frames are removed after rendering. The script writes the GIF and
 self-contained static SVG beside itself. The GIF is 7,253,970 bytes, below its
 eight-megabyte size limit. The README offers the static SVG for readers who prefer
-a still image. The film excerpt shows the recorded app appearance; it does not
+a still image. The film excerpt shows the recorded app appearance. It does not
 establish clinical accuracy or new end-to-end validation.
 
 ## Re-encode the public film

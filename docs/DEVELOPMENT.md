@@ -4,7 +4,7 @@ Run all commands from the repository root. Use Python 3.11 or later, `uv`, and
 `curl`. Keep the service environment separate from the GPU model environment in
 the [GPU setup guide](../processing/reconstruction/GPU_SETUP.md).
 
-Read the [current handoff](HANDOFF.md), [specification](SPEC.md), and
+Read the [project status](STATUS.md), [specification](SPEC.md), and
 [processing contract](openapi.yaml) before continuing an incomplete milestone.
 The [Quest guide](../quest/README.md) covers Unity builds, C# checks, and device
 verification.
@@ -29,8 +29,9 @@ export PROCESSING_DATA_DIR="$PWD/var/processing"
 ```
 
 If you need real reconstruction, [configure inference](#connect-real-inference)
-before starting the service. Without that configuration, the service retains
-accepted full-body captures and reports `PROCESSING_FAILED`. It never substitutes
+before starting the service. Without it, jobs that request a replay fail with
+`PROCESSING_FAILED` and retain their captures. Historical barefoot jobs without
+a replay can succeed with unavailable assessment. The service does not substitute
 a synthetic replay.
 
 ```sh
@@ -90,7 +91,8 @@ intrinsics estimated. It does not calibrate the lens, establish physical scale,
 or alter the original sidecar. Rectification and real alignment still need
 validation.
 
-Supply a per-frame encoded media timestamp mapping for configured inference.
+Include `media.presentation_time_us` in each reconstruction sidecar. The service
+requires this per-frame encoded timestamp mapping for configured inference.
 Source camera nanoseconds remain unchanged. The worker checks encoded microseconds
 separately against every decoded image. Replay export preserves source references
 and root motion, converts the body surface and skeleton together, and validates
@@ -152,7 +154,8 @@ it. Result and artifact routes return 409 for failed or incomplete jobs. For a
 deliberate reprocessing attempt, create a new key. The service preserves the
 original capture and result version.
 
-Keep captures within the default ceilings:
+Use the default limits in [Settings](../processing/settings.py). These limits
+are admission ceilings, not recommended recording sizes:
 
 | Resource | Limit |
 |---|---|
@@ -167,10 +170,14 @@ Keep captures within the default ceilings:
 | Private storage | 8 GiB |
 | Upload deadline | 120 seconds |
 
+Only the inference timeout and scratch budget in the table above have environment
+settings. Other upload and storage limits come from `Limits` in
+`processing/settings.py`.
+
 The service reserves storage before acceptance and returns retryable 429 when
 busy or full. It never deletes accepted recordings to free space. Upload
 validation checks ZIP contents and MP4 signatures. The inference and microscope
-adapters also bound decoding and verify frame/time correspondence before
+adapters also bound decoding and verify frame and time correspondence before
 producing output.
 
 ## Run the automated checks
@@ -191,7 +198,7 @@ synthetic inputs and a test-only worker. CPU tests cover model orchestration and
 real codec timestamps. They do not establish CUDA execution or model accuracy.
 Follow the [Quest guide](../quest/README.md) for builds and C# checks. Verify
 on-device input, real-video reconstruction, and assessment on unseen participants
-separately. Record the remaining work in the [handoff](HANDOFF.md).
+separately. Record the remaining work in the [project status](STATUS.md).
 
 Keep participant recordings, identifying profile data, model weights,
 credentials, and restricted datasets out of Git.

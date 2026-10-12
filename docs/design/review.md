@@ -1,42 +1,46 @@
-# Quest Review — design handoff
+# Review layout
 
-**Scope:** Interactive browser prototype of the app's Review screen, not Quest system UI. The sample session contains no real recording, processing result, clinical finding, or calibrated measurement.
+The current Quest Review UI is implemented in
+[`WorkflowPanel.Insights.cs`](../../quest/Assets/Physio/Viewer/WorkflowPanel.Insights.cs)
+and [`HandReplayPanel.cs`](../../quest/Assets/Physio/Viewer/HandReplayPanel.cs).
+See the [Quest guide](../../quest/README.md) for controls and the
+[workflow state map](workflow-states.md) for navigation.
 
-## Layout and context
+## Current interface
 
-- The centered, user-facing panel keeps the synthetic patient, current test date and type visible when a session exists. The main evidence area distinguishes source footage from the session-context and evidence-state column. At 1600 × 1000, it is a visual scale reference only; Hamza must validate physical size, legibility, ray targets, and hand-poke reach at roughly 1–1.5 m in Quest.
-- The second synthetic patient has no dated sessions. Selecting them replaces the Review content with an empty-session state; it does not carry over Morgan Chen's date, test type, or evidence controls.
-- The dated History dialog explicitly marks the older record as a previous recovery example. It must never look like the current result.
+The main workspace shows selected patient, test, and saved-result context beside
+the reconstructed body. The separate replay HUD provides play and pause, full
+timeline, reverse, speed, frame steps, and restart. The body and skeleton share a
+display transform. Display manipulation does not change stored measurements.
 
-## Meta UI Set pattern mapping
+**Patterns** lists local descriptive estimates from the reconstructed pose.
+If the result has saved observations without local pattern items, the tab reads
+**Observations**. **Findings** shows supported findings or an unavailable state.
+The Goata score gauge shows a matching replay's score and summary. The viewer
+does not expose the score's full calculation details. Observation **Details**
+shows its own method and limitations. Conclusions use scrollable text.
 
-This React preview uses browser controls styled around Meta UI Set patterns. **It does not import Unity UI Set prefabs, implement Quest hand/controller input, connect footage, or run processing.**
+Matching-take evidence seeks and highlights the replay's source interval.
+Other-take footage opens separately with the hologram paused. Original footage
+and amplified microscope footage remain labelled separately. Missing evidence
+and rejected microscope processing retain their explanations.
 
-| App element | UI Set translation and intended behavior |
-|---|---|
-| Back | Borderless secondary button. The isolated browser preview shows a destination notice rather than navigating. In Unity, a saved Review returns to the selected patient's dated History and exact saved result version; it must never start a new Capture. The session coordinator resolves Back for other contexts. |
-| Patient selector | Dropdown/selector with synthetic patients. Selecting a patient resets session-specific preview controls; a patient without history gets the empty state. |
-| History | Secondary button opens a dialog of dated test entries or a clear empty-history message with `Start new test`. The recovery example remains marked as previous. |
-| Evidence / Foot review | Tab controls with explicit selected state. Foot review shows unavailable source and unset side/view/condition; return to evidence is provided. |
-| Original / Amplified footage | Separate labelled source tabs and separate unavailable messages. Never treat amplified footage as the original source. |
-| Processing | Status card displays `Waiting for source`, stage `Not started`, and elapsed `—` because no job exists. `Retry` demonstrates checking, then failure when footage remains absent; it is not real processing. |
-| Evidence state | Selectable `Unavailable` / `Poor evidence example` tiles. Poor quality is only an illustrative state; verified quality criteria are pending. No diagnosis or treatment is shown. |
-| Microscope | Dialog with source-unavailable message and disabled zoom/focus sliders until actual evidence exists. |
-| Options | Dialog with local preview toggles for source details and a scale-guide request. A calibrated scale is not claimed. |
+Saved Review returns to the selected patient's History. Options provides skeleton
+visibility, body opacity, floor-placement reset, and saved versions. Normal
+saved-review Options does not offer reprocessing. The Processing context owns
+that guarded action. Local **Rerun classifications** requires no new upload.
 
-The versioned browser export still shows the prototype label “Back to capture.” That label and its notice are **not** the Unity navigation specification: replace them with a contextual Back action. For a saved test, show “Back to patient history” and return to the same patient's dated History; never enter a new capture. The coordinator owns Back for other contexts.
+Clinical evaluation, useful magnification, and physical interaction checks remain
+incomplete. See [project status](../STATUS.md).
 
-## States and handoff
+## Historical browser reference
 
-- Visible or selectable: current synthetic session, second patient with empty history, original/amplified source-unavailable states, waiting/checking/failed retry, unavailable/illustrative poor evidence, foot-unavailable view, microscope-unavailable view, and display options.
-- Not implemented: a real completed recording, actual processing stage or elapsed time, verified findings, evidence-quality calculation, calibrated scale, persistent patient data, or in-headset interaction. Do not show a processing success or clinical conclusion until supplied by the runtime.
-- Versioned annotation source in the team repository: `docs/design/review.md` (this file); visual export: `design/review-preview.jpg` (1600 × 1000 default synthetic-session state). It is a visual reference, not a Unity prefab or evidence image.
-- The interactive browser prototype source remains in the separate Replit design workspace at `artifacts/mockup-sandbox/src/components/mockups/quest-review/QuestReview.tsx`; it is not included in this repository or required for Unity import.
-- Unity handoff: Hamza maps the selector, tabs, buttons, dialog, toggles, and disabled sliders to Meta UI Set equivalents, binds actual state/data and footage sources, and checks layout with both ray and poke in Quest. Keep assets outside `quest/**` until Hamza imports them.
+[`review-preview.jpg`](../../design/review-preview.jpg) is a 1600 × 1000 browser
+mockup with synthetic patient and dated-test context. It illustrates empty
+history, missing original and amplified footage, illustrative poor evidence,
+and unavailable foot and microscope views.
 
-## Pending decisions
-
-1. Mohammad's verified protocol and any permitted evidence/condition labels.
-2. Actual source and relationship of original versus amplified footage, recording timestamps, processing stages, elapsed time, and failure/retry behavior.
-3. Evidence quality criteria, calibrated scale source, and whether microscope controls can operate on available evidence.
-4. In-headset target sizes, physical panel dimensions, and placement after testing with Hamza.
+The image's **Back to capture** label records an earlier design. It does not
+specify current saved-result navigation. The browser preview supplies no real
+recording, processing stage, finding, calibrated measurement, or persistent
+patient store. Its HTML controls are not imported Unity UI Set prefabs.

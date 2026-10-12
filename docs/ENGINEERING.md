@@ -5,7 +5,7 @@ The fitted body supports inspection and geometric observations, without establis
 
 This guide explains the current source. [Development](DEVELOPMENT.md) has setup
 and check commands. [The specification](SPEC.md) defines accepted requirements,
-and [the handoff](HANDOFF.md) records historical device and GPU evidence.
+and [project status](STATUS.md) records completed checks and remaining device and GPU work.
 
 ## Data flow
 
@@ -29,18 +29,18 @@ One take supplies the replay. Other viewpoints retain their own evidence identit
 
 ## Modules and interfaces
 
-The main seams are the capture contract, the configured inference command, and
+The main interfaces are the capture contract, the configured inference command, and
 the replay contract. Each keeps its validation next to the implementation that
 accepts the data. No model checkpoint or Python object is an upload interface.
 
 | Module | Interface and source |
 |---|---|
 | Capture | [QuestTakeRecorder](../quest/Assets/Physio/Capture/QuestTakeRecorder.cs) records camera images. [CaptureBundle](../quest/Assets/Physio/Capture/CaptureBundle.cs) creates the sidecar and sealed bundle. |
-| Patient history | [LocalPatientStore](../quest/Assets/Physio/Workflow/LocalPatientStore.cs) owns patients, sessions, captures, and result versions. Its methods require matching patient/session identity. |
+| Patient history | [LocalPatientStore](../quest/Assets/Physio/Workflow/LocalPatientStore.cs) owns patients, sessions, captures, and result versions. Its methods require matching patient and session identity. |
 | Transfer | [ProcessingClient.ProcessAsync](../quest/Assets/Physio/Workflow/ProcessingClient.cs) handles submission, polling, download verification, and cache publication. [openapi.yaml](openapi.yaml) describes the HTTP interface. |
 | Request handling | [create_app](../processing/service.py) wires authentication, upload validation, job storage, and one worker. An injected processor permits tests through the same HTTP interface. |
 | Persistence | [Store](../processing/storage.py) owns admission, state transitions, recovery, and atomic result publication. |
-| Processing | [Pipeline.__call__](../processing/pipeline.py) accepts saved inputs, capture/job context, an output directory, and a stage callback. It returns a result manifest. |
+| Processing | [Pipeline.__call__](../processing/pipeline.py) accepts saved inputs, capture and job context, an output directory, and a stage callback. It returns a result manifest. |
 | Inference | [runtime.run](../processing/reconstruction/runtime.py) validates and prepares video. [gvhmr.infer_native](../processing/reconstruction/gvhmr.py) is the CUDA adapter. |
 | Export | [export_native](../processing/export.py) validates native output and returns a replay manifest, artifact inventory, and provenance. |
 | Publication | [validate_result](../processing/publication.py) checks identity, evidence, feature status, and output files before Store can publish them. |
@@ -58,7 +58,9 @@ mapping, missed frames, interruptions, camera metadata, and capture condition.
 [runtime.bind_pts](../processing/reconstruction/runtime.py) checks every decoded
 presentation timestamp against that media mapping. Equal frame counts alone do
 not establish correspondence. The configured worker passes `--pts-offset-ns 0`
-because this explicit mapping already binds the two clocks.
+because this explicit mapping already binds the two clocks. The service requires
+`sidecar.media`. The standalone runtime also supports legacy input with an
+explicit decoder offset. That standalone option does not relax service validation.
 
 GVHMR input uses the nearest original image at each 30 Hz target. Ties choose the
 earlier image. [map_selected_frames](../processing/reconstruction/timing.py)
@@ -71,10 +73,11 @@ intervals above 100 ms. It accepts at most 3,600 source frames and 600 prepared
 inference frames. It does not trim a longer take automatically. Inference also
 requires one consistent person track in every prepared frame.
 
-## Model execution and the CPU/CUDA split
+## Model execution and the CPU and CUDA execution
 
 [Pipeline](../processing/pipeline.py) launches the configured JSON argument list
-as a local subprocess, without a shell. It adds video, sidecar, output, and timing
+as a fresh local subprocess for each replay take, without a shell. Models do not
+remain loaded between production jobs. It adds video, sidecar, output, and timing
 arguments, adds the repository to `PYTHONPATH`, and removes `PROCESSING_TOKEN` from
 the child environment. A container adapter must map those paths itself.
 
@@ -101,7 +104,7 @@ records the pinned environment and proof history. Mac CPU checks do not prove GP
 
 ## Native output and Unity conversion
 
-The native handoff includes the input video/sidecar hashes, model revision, asset
+The native handoff includes the input video and sidecar hashes, model revision, asset
 hashes, selection mapping, geometry metadata, and a fixed artifact inventory.
 Coordinates are little-endian float32 XYZ arrays. Triangles are uint32 triples.
 The [exporter](../processing/export.py) verifies sizes, hashes, finite coordinates,
@@ -147,8 +150,10 @@ passes. Store flushes files, renames the artifact directory, then records succes
 On restart, unfinished jobs become `WORKER_INTERRUPTED`. Partial outputs are
 discarded, while accepted recordings and successful results remain available.
 
-The unconfigured reconstruction path fails with `PROCESSING_FAILED` and retains
-the capture. It never generates substitute motion. Result/artifact routes return
+When a job requests a replay but inference is unconfigured, it fails with
+`PROCESSING_FAILED` and retains the capture. A historical barefoot job without
+a replay skips reconstruction and can publish a result with unavailable foot
+assessment. Neither path generates substitute motion. Result and artifact routes return
 409 until a job succeeds. Downloads resolve opaque artifact IDs through that
 job's inventory, not through caller-supplied file paths.
 
@@ -191,19 +196,24 @@ each peak's separate evidence moment.
 
 [GoataScore](../quest/Assets/Physio/Replay/GoataScore.cs) implements `goata-demo-v1`.
 It computes `100 - sum(weight * severity)` with linear, capped demo deductions.
-Default weights are 50/50. Walking uses knee peak difference with a 20-degree
-scale and upper-body tilt with a 30-degree scale. ELK uses shoulder/hip twist and
-fore/aft tilt. RTK uses sideways and fore/aft tilt, each with a 30-degree scale.
+The two default weights are 50 each. Walking uses knee peak difference with a 20-degree
+scale and upper-body tilt with a 30-degree scale. ELK uses shoulder-to-hip twist and
+fore-and-aft tilt. RTK uses sideways and fore-and-aft tilt, each with a 30-degree scale.
 Available categories are reweighted to total 100. No supported category means
 an unavailable score. These thresholds are app-defined demonstration rules.
 
+`GoataScoreResult.Details` contains the deduction explanation, but the viewer
+currently shows only `Score` and `Summary`. Observation details have a separate
+UI path through `InsightPresentation.Details`. The score explanation is not yet
+connected to that path.
+
 The [pipeline](../processing/pipeline.py) still returns `findings: []` and
-`validation_status: research_demo_unvalidated`. Evaluated ELK/RTK assessment,
+`validation_status: research_demo_unvalidated`. Evaluated ELK and RTK assessment,
 clinical gait assessment, and automated historical foot assessment remain
 unavailable. A score or descriptive observation does not change that status.
 
 The [microscope module](../processing/microscope.py) works on original video,
-checks sampling and background stability, and returns original/amplified artifacts
+checks sampling and background stability, and returns original and amplified artifacts
 or an explicit unavailable result. Numerical pose analysis never uses amplified
 images or display-scaled geometry. Magnification can also amplify artifacts.
 
@@ -212,19 +222,22 @@ images or display-scaled geometry. Magnification can also amplify artifacts.
 [Authentication](../processing/service.py) checks one bearer header with a
 constant-time comparison before parsing request bodies. The [CLI](../processing/__main__.py)
 requires TLS outside loopback. One deployment token grants access to that
-deployment's jobs; it is not multi-clinic authorization. Logs omit arbitrary
-exception contents, credentials, and participant media.
+deployment's jobs. It is not multi-clinic authorization. HTTP and worker handlers
+log request or job IDs without arbitrary exception text. In contrast,
+`process_microscope` uses `logger.exception` for decoder and artifact-write
+failures. That path writes a stack trace, so the code does not guarantee sanitized
+logs throughout the service. Inference stdout and stderr go to `DEVNULL`.
 
 [Upload validation](../processing/uploads.py) rejects traversal, linked or
 unlisted members, duplicate names, malformed archives, and mismatched hashes.
 It accepts bounded flat ZIPs, not arbitrary remote URLs, executables, or pickle
-files. Decoder checks establish media/time correspondence after signature checks.
+files. Decoder checks establish media and time correspondence after signature checks.
 
 [Settings](../processing/settings.py) bound ZIP uploads to 512 MiB, expanded
 files to 1 GiB, and private storage to 8 GiB by default. Uploads have a 120-second
 deadline. Inference has a 900-second deadline and 768 MiB scratch budget. Timeout
 handling kills the inference process group. The decoded replay limit is 256 MiB.
-[Development](DEVELOPMENT.md) lists the complete upload/output limits and options.
+[Development](DEVELOPMENT.md) lists the complete upload and output limits and options.
 
 ## What the benchmark measures
 
@@ -234,24 +247,30 @@ accepted. The warmed streaming run took a median 2.27 seconds after simulated
 capture ended, or 10.27 seconds from capture start to decode-verified annotated
 video. The clocks start at different points and the outputs are not Quest display.
 
-The optimized run uses 640 by 360 analysis, 15 observations per second, half-second
-input chunks, and mixed precision. It excludes Quest encoding, network transfer,
-headset loading/display, and one-time warmup. The [persistent](../experiments/persistent_inference/)
+The published record describes 640 by 360 analysis, 15 observations per second,
+half-second input chunks, and mixed precision. Its raw runner and event files
+are absent from this repository. The checked-in
+[streaming fixture](../experiments/streaming_inference/fixture.py) instead requires
+four two-second chunks. Its [RTX 3070 result](../experiments/streaming_inference/rtx3070-640-15.json)
+records 3.5604 seconds from stop to decode-verified video for the CPU-overlap
+streaming run. Serial streaming took 3.7902 seconds. Both experiment records exclude
+Quest encoding, network transfer, headset loading and display, and one-time warmup.
+The [persistent](../experiments/persistent_inference/)
 and [streaming](../experiments/streaming_inference/) experiments are separate from
 the production Pipeline, which launches a fresh command for each reconstruction.
 These measurements do not prove a two-second capture-to-headset replay.
 
 ## Verification coverage and open checks
 
-[Python tests](../tests/) cover uploads, persistence/restarts, publication,
+[Python tests](../tests/) cover uploads, persistence and restart recovery, publication,
 coordinates, media timing, and observations. Live HTTP tests use a real loopback
 listener with synthetic input and a test-only processor. [pyproject.toml](../pyproject.toml)
 sets an 80% coverage threshold for processing, not a model-accuracy threshold.
 
 [Quest checks](../quest/Checks/) exercise importer rejection, replay timing,
 capture metadata, workflow identity, evidence, patterns, and Goata scoring.
-[The Quest guide](../quest/README.md#runnable-checks) separates these checks from
-Unity/device work. [Development](DEVELOPMENT.md#run-the-automated-checks) contains
+[The Quest guide](../quest/README.md#run-checks) separates these checks from
+Unity builds and device work. [Development](DEVELOPMENT.md#run-the-automated-checks) contains
 the Python check entrypoints.
 
 Remaining acceptance includes a fresh timed capture-to-headset run, wearer input
