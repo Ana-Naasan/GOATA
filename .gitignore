@@ -28,6 +28,8 @@ htmlcov/
 *.p12
 *.pfx
 *.mp4
+# The public project film is the only approved video in Git.
+!/docs/media/demo.mp4
 *.mov
 *.zip
 quest/[Ll]ibrary/

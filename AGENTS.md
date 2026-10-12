@@ -14,10 +14,10 @@ Work continuously and hand off usable output immediately. The user does not want
 
 | Owner | Branch | Exclusive files | GitHub task |
 |---|---|---|---|
-| Bader (`B2707`) | `codex/bader-backend` | `processing/**` except the ML paths below; `tests/backend/**`, `tests/contracts/**`; root/shared configuration, Python manifests/lockfiles, `.github/**`, shared project docs | [#1](https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp/issues/1) |
-| Mohammad (`MohammadESteitieh`) | `codex/mohammad-ml` | `processing/reconstruction/**`, `processing/analysis/**`, `tests/ml/**`; model-specific dependency pins inside those directories | [#2](https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp/issues/2) |
-| Hamza (`HamzaAlsarakbi`) | `codex/hamza-quest` | All `quest/**`, including scenes, prefabs, imported assets, `.meta` files, Packages, ProjectSettings and Unity tests | [#3](https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp/issues/3) |
-| Mustafa (`mustafahelmyh`) | `codex/mustafa-design` | `design/**`, `docs/design/**` | [#4](https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp/issues/4) |
+| Bader (`B2707`) | `codex/bader-backend` | `processing/**` except the ML paths below; `tests/backend/**`, `tests/contracts/**`; root/shared configuration, Python manifests/lockfiles, `.github/**`, shared project docs | [#1](https://github.com/B2707/GOATA/issues/1) |
+| Mohammad (`MohammadESteitieh`) | `codex/mohammad-ml` | `processing/reconstruction/**`, `processing/analysis/**`, `tests/ml/**`; model-specific dependency pins inside those directories | [#2](https://github.com/B2707/GOATA/issues/2) |
+| Hamza (`HamzaAlsarakbi`) | `codex/hamza-quest` | All `quest/**`, including scenes, prefabs, imported assets, `.meta` files, Packages, ProjectSettings and Unity tests | [#3](https://github.com/B2707/GOATA/issues/3) |
+| Mustafa (`mustafahelmyh`) | `codex/mustafa-design` | `design/**`, `docs/design/**` | [#4](https://github.com/B2707/GOATA/issues/4) |
 
 - Check the current branch and working tree before editing. Each person and their agents use that person's branch and owned paths. Ask the file owner before crossing a boundary; preserve others' changes.
 - Hamza alone imports design assets into Unity. Mohammad supplies inference/model outputs; Bader owns the service wrapper and Unity exporter. Agree raw output shapes, coordinates, validity and source-time mapping before separate implementations.

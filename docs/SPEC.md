@@ -4,7 +4,7 @@
 - **State:** accepted product decisions; component implementations and checks exist, with real Quest end-to-end and assessment acceptance incomplete. See `HANDOFF.md`.
 - **Target:** Meta Quest 3, with desktop/server processing.
 - **Original deadline:** September 27, 2026, 10:00 a.m. EDT / 14:00 UTC.
-- **Repository:** https://github.com/B2707/HTH-3-sarakbi-asadi-steitieh-grp
+- **Repository:** https://github.com/B2707/GOATA
 
 This is the source of truth for a new Codex session. `HANDOFF.md` records what actually works. `openapi.yaml` defines the implemented service interface. No conversation history is required. Where a model, measurement or runtime remains unverified, that is an explicit engineering task, not permission to invent a result.
 

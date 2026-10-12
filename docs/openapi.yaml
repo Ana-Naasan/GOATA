@@ -3,9 +3,9 @@ info:
   title: Physio Motion Replay processing service
   version: 0.1.0
   description: |
-    Local transfer and job mechanics are implemented. Real inference is not yet
-    integrated; accepted captures currently fail with PROCESSING_FAILED while
-    preserving their original files. No validated clinical model is claimed.
+    Local transfer, job mechanics, and configured real inference are implemented.
+    Without an inference command, accepted full-body captures fail with
+    PROCESSING_FAILED while preserving originals. No validated clinical model is claimed.
     The Quest app owns patient profiles and history. This service processes one
     immutable capture bundle at a time and returns versioned artifacts. Display
     names are not uploaded. A successful job means its result was saved, not that

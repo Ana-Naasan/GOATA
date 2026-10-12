@@ -1,6 +1,79 @@
 # Codex session handoff
 
-**Last updated:** September 27, 2026. Quest **0.3.6 / Android code 13** is
+## Repository presentation, October 12, 2026
+
+Current worktree branch: `t3/polish-repo-animations-video`, based on `2691a79`.
+The user authorized renaming the GitHub repository to
+[`B2707/GOATA`](https://github.com/B2707/GOATA). The rename preserves repository
+ID `1388906255`. The local `origin`, specification link, and team issue links now
+use that URL.
+`gh repo rename GOATA --repo B2707/HTH-3-sarakbi-asadi-steitieh-grp --yes`
+succeeded. `gh repo view --json nameWithOwner,url` confirmed the name, and
+`git ls-remote origin HEAD` returned the existing `2691a79` main commit.
+The matching T3 project is also named `GOATA`; its workspace path is unchanged.
+
+The user approved committing and pushing this presentation update on the current
+branch. No deployment, model run, or Quest installation was performed. The
+application evidence below remains the last recorded device work, not verification
+from this session.
+
+- Rewrote `README.md` around N3 Goata, matching the supplied public website's
+  branding. At the user's request, replaced the initial illustrated walking GIF
+  with actual Quest replay footage from the public film at 01:07.5 to 01:10.0.
+  The full room view remains intact, with the title strip above it. The user
+  requested removal of the bottom caption and timestamps; that strip is removed
+  from both the GIF and static SVG.
+  The static SVG uses the same film frame. The 136.77-second repo video is
+  11.80 MB at 720p, with a link to the original full-quality film.
+- Moved the detailed setup, inference configuration, upload examples, limits,
+  and check commands to `docs/DEVELOPMENT.md`. Added `docs/ENGINEERING.md` for
+  implemented architecture, interfaces, source timing, coordinates, persistence,
+  failures, and verification limits. No application module, dependency, or
+  processing interface changed.
+- Corrected the stale description in `docs/openapi.yaml`: configured inference
+  is integrated. The default unconfigured full-body path still fails explicitly.
+- Added `docs/media/README.md` with provenance, tool versions, hashes, and rebuild
+  instructions. `docs/media/benchmark.json` is the unchanged public website
+  benchmark, not new performance evidence. `.gitignore` allows only this public
+  film at `/docs/media/demo.mp4`; other recordings remain excluded.
+
+Verification completed:
+
+- `node docs/media/render_banner.mjs` produced a 960 × 628, 30-frame GIF with a
+  2.5-second loop, 7,253,970 bytes. The source interval and representative frames
+  were inspected against the film. The generator checks the input film hash.
+  `node --check docs/media/render_banner.mjs` passed.
+- `ffprobe -v error -count_frames -show_entries
+  format=duration,size:stream=width,height,nb_read_frames -of json
+  docs/media/n3-goata-banner.gif` confirmed the banner metadata.
+- `ffmpeg -hide_banner -v error -xerror -i docs/media/demo.mp4 -f null -`
+  decoded the complete video and audio without errors. The MP4 index precedes
+  media data. Chrome played the local file at 1280 × 720, duration 136.766667 s,
+  with ready state 4 and no media error.
+- Rendered the actual README using an existing Markdown renderer and inspected
+  desktop 900px and mobile 390px layouts. The local approximation is not a
+  published GitHub page. The GIF, poster, text, and tables fit both widths.
+- A local link checker verified 96 relative links, image paths, and anchors
+  across the README and new guides. `zsh -n` passed for the shell examples.
+  Published benchmark values match the README's rounded numbers.
+- Independent review found no actionable issue with the README claims,
+  engineering guide, transferred instructions, video-based banner generator,
+  media provenance, or narrow ignore exception.
+  `git diff --check` passed. App tests were not rerun for this documentation and
+  media change.
+
+Installed tools used: Node.js 26.0.0, FFmpeg 9.0.2, and librsvg 2.62.1. No tools,
+model weights, or datasets were installed. Device and GPU access were not tested.
+The remaining application requirements are unchanged: timed fresh capture through
+loaded headset replay, wearer acceptance, evaluated clinical findings, and a
+useful real-camera motion microscope result.
+
+This change is ready for review into `main`. The original recordings stay excluded
+from Git. The public project film is the only included video.
+
+## Application status recorded September 27, 2026
+
+Quest **0.3.6 / Android code 13** is
 built, installed over USB and launched with an authenticated private-service
 connection. All **423** saved app files survived unchanged. It includes the
 approved replay UI fixes, plain-language conclusions and deterministic Goata
