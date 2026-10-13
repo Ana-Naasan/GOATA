@@ -135,12 +135,12 @@ require a replay.
 
 ## The team
 
-| Builder | Focus |
-|---|---|
-| [Bader](https://github.com/B2707) | Backend and integration |
-| [Mohammad](https://github.com/MohammadESteitieh) | Reconstruction and analysis |
-| [Hamza](https://github.com/HamzaAlsarakbi) | Quest application |
-| [Mustafa](https://github.com/mustafahelmyh) | Design |
+| Builder |
+|---|
+| [Bader](https://github.com/B2707) | 
+| [Mohammad](https://github.com/MohammadESteitieh) | 
+| [Hamza](https://github.com/HamzaAlsarakbi) | 
+| [Mustafa](https://github.com/mustafahelmyh) |
 
 Participant recordings, credentials, model weights, and restricted datasets stay
 out of Git. The explicitly included public project film is presentation media.
