@@ -11,9 +11,13 @@ to the app or evidence of new validation.
 | `demo.mp4` | Smaller copy of the [public project film](https://n3-goata.vercel.app/HtH-Demo-N3.mp4?v=requested-edits), included at the project owner's request. |
 | `benchmark.json` | Unmodified [website benchmark summary](https://n3-goata.vercel.app/benchmark.json), retrieved October 12, 2026. The half-second-chunk runner and raw event files are not included in this repo. |
 
-The README links its poster to the website's player. It also links the local MP4
-directly, so readers can download the film with the repo. It does not depend on
-an HTML video element surviving GitHub's Markdown rendering.
+The README uses a [GitHub video attachment](https://github.com/user-attachments/assets/6b5f804e-f4cf-48c7-8f9c-bac253dac2b9)
+so the full film plays inline on GitHub. The attachment contains the same bytes
+as `demo.mp4`. The MP4 remains in the repository for local playback and download.
+
+Keep the attachment URL on its own paragraph in the README. GitHub turns that
+URL into a native video player. A Markdown image link or a raw HTML video tag
+does not produce the same player. The banner links to the README's demo section.
 
 The only video exception in `.gitignore` is `/docs/media/demo.mp4`. Original
 participant recordings remain excluded. The banner reuses only the already-public

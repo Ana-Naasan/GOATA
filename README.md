@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://n3-goata.vercel.app/">
+  <a href="#watch-the-demo">
     <img src="docs/media/n3-goata-banner.gif" alt="N3 Goata. An excerpt from the demo film shows the translucent blue body and skeleton replayed in the Quest room view." width="100%">
   </a>
 </p>
@@ -28,14 +28,10 @@ estimates and demo scores are not validated clinical findings.
 
 ## Watch the demo
 
-[![Watch the N3 Goata project film](docs/media/demo-poster.jpg)](https://n3-goata.vercel.app/#film)
+https://github.com/user-attachments/assets/6b5f804e-f4cf-48c7-8f9c-bac253dac2b9
 
-[Watch the full-quality film](https://n3-goata.vercel.app/#film) ·
-[Open the video in this repo](docs/media/demo.mp4) ·
+[Video file](docs/media/demo.mp4) ·
 [View the static banner](docs/media/n3-goata-banner.svg)
-
-The project film comes from the public Goata website. The banner uses its actual
-Quest replay footage at 01:07.5 to 01:10.0, with the original room view intact.
 
 ## What you can explore
 
