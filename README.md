@@ -1,161 +1,153 @@
-# Physio Motion Replay
+<p align="center">
+  <a href="https://n3-goata.vercel.app/">
+    <img src="docs/media/n3-goata-banner.gif" alt="N3 Goata. An excerpt from the demo film shows the translucent blue body and skeleton replayed in the Quest room view." width="100%">
+  </a>
+</p>
 
-Record a supported test through Meta Quest 3, then inspect a translucent blue body,
-aligned skeleton and source-linked evidence. The practitioner chooses corrections.
+<h1 align="center">GOATA</h1>
 
-**Last updated:** September 27, 2026. Capture, local patient history, processing,
-replay import and the native Meta UI are implemented together. A public-video
-GVHMR run produced real geometry on an RTX 3070. A fresh Quest recording has not
-yet completed the full path. Evaluated ELK/RTK findings and clinical gait assessment,
-a useful real Quest microscope result and on-device performance remain incomplete.
-See [the current handoff](docs/HANDOFF.md) for the exact verification boundary.
+<p align="center">Record a movement. Pause it in 3D. Walk around the moment.</p>
 
-## Run the local processing service
+<p align="center">
+  <a href="https://n3-goata.vercel.app/">Project website</a> ·
+  <a href="#watch-the-demo">Watch the demo</a> ·
+  <a href="docs/ENGINEERING.md">Engineering</a> ·
+  <a href="docs/DEVELOPMENT.md">Developer guide</a> ·
+  <a href="docs/STATUS.md">Project status</a>
+</p>
 
-Use Python 3.11 or later for the service. Its environment is separate from the
-GPU model environment in [GPU setup](processing/reconstruction/GPU_SETUP.md).
+<p align="center"><code>Hack the Hill III</code> · <code>Meta Quest 3</code> · <code>Unity + C#</code> · <code>Python + CUDA</code></p>
 
-```sh
-uv sync --locked --python 3.11 --extra microscope
-export PROCESSING_TOKEN="$(uv run --locked python -c 'import secrets; print(secrets.token_urlsafe(32))')"
-export PROCESSING_DATA_DIR="$PWD/var/processing"
-uv run --locked --extra microscope python -m processing --host 127.0.0.1 --port 8000
-```
+GOATA lets a practitioner record movement with Quest 3 and inspect a fitted body
+and skeleton in mixed reality. Pause a movement, change the viewing angle, and
+open the original recording at an observation's source moment.
 
-Keep the token private and retain it across restarts. Patient names and histories
-stay on Quest; the service receives opaque patient/session/take IDs. One deployment
-token protects this private demo. The CLI requires a TLS certificate and key for
-non-loopback listeners. This command starts a local service, not a deployment.
-Use one process; a filesystem lock rejects a second process using the same store.
+The application and processing package use the name Physio Motion Replay.
+GOATA is a research prototype. Its movement
+estimates and demo scores are not validated clinical findings.
 
-The `microscope` extra installs NumPy, OpenCV and PyAV. Without it, the microscope
-returns an explicit unavailable result. Installing the extra does not install
-GVHMR, CUDA, checkpoints or registered body assets.
+## Watch the demo
 
-### Connect real inference
+[![Watch the N3 Goata project film](docs/media/demo-poster.jpg)](https://n3-goata.vercel.app/#film)
 
-The service runs one operator-configured local command without a shell. Configure
-it **before** starting the service, after the independent GPU proof succeeds.
-Example paths below must point to the actual model environment and GVHMR checkout:
+[Watch the full-quality film](https://n3-goata.vercel.app/#film) ·
+[Open the video in this repo](docs/media/demo.mp4) ·
+[View the static banner](docs/media/n3-goata-banner.svg)
 
-```sh
-export PROCESSING_INFERENCE_COMMAND='["/absolute/model-env/bin/python","-m","processing.reconstruction.runtime"]'
-export PROCESSING_INFERENCE_CWD=/absolute/path/to/GVHMR
-```
+The project film comes from the public Goata website. The banner uses its actual
+Quest replay footage at 01:07.5 to 01:10.0, with the original room view intact.
 
-The worker appends `--video`, `--sidecar`, `--output` and `--pts-offset-ns 0`, adds
-the repository to `PYTHONPATH`, and removes `PROCESSING_TOKEN` from the child
-process environment. No SSH connection is embedded in the service. A container
-wrapper must expose the same CLI and map the supplied paths correctly; the
-standalone Docker commands in GPU setup do not configure that wrapper for you.
-The default unconfigured service retains accepted full-body captures and reports
-`PROCESSING_FAILED`; it never substitutes a synthetic replay.
+## What you can explore
 
-| Setting | Default and meaning |
+- **Capture with Quest.** Select a patient and test, confirm consent, and follow
+  guided recording positions. Original recordings and timestamps remain intact.
+- **Review a fitted body.** Inspect the translucent blue body and aligned
+  skeleton. Pause, reverse, step through frames, change speed, or walk around it.
+- **Follow the evidence.** Open a movement observation at its source moment.
+  The practitioner chooses corrections.
+- **Return to a saved test.** Keep dated patient histories, reopen saved results,
+  and move or resize the replay without changing its stored measurements.
+
+| Test | Movement reviewed |
 |---|---|
-| `PROCESSING_INFERENCE_TIMEOUT_SECONDS` | `900`; stops the inference process group when exceeded. |
-| `PROCESSING_INFERENCE_WORKSPACE_BYTES` | `805306368` (768 MiB); bounds inference scratch output. |
-| `PROCESSING_ALLOW_ESTIMATED_INTRINSICS` | `false`; `true` permits estimating intrinsics when the source marks them unavailable. |
-| `PROCESSING_ALLOW_UNVERIFIED_PINHOLE` | `false`; `true` permits only unknown distortion with no coefficients as an explicitly unverified pinhole approximation. |
+| KERAAL ELK | Seated flank stretch. Estimated lateral torso lean. |
+| KERAAL RTK | Seated torso rotation. Estimated shoulder-to-pelvis rotation. |
+| Walking review | A full-body walking pass. Estimated knee flexion and torso inclination. |
 
-Quest's camera SDK supplies intrinsics but no distortion model/coefficients.
-Its sidecar preserves that unknown state. The pinhole opt-in records an
-approximation and labels processing intrinsics estimated; it does not calibrate
-the lens, establish physical scale or alter the original sidecar. Strict defaults
-reject that unverified camera model. Rectification and real alignment still need
-validation.
+The Goata Score combines deterministic demo rules into a score from 0 to 100.
+The viewer shows the score and a summary. The current interface does not expose
+the full calculation details. The score is not a clinical assessment.
 
-Configured inference requires a per-frame encoded media timestamp mapping. Source
-camera nanoseconds remain unchanged; encoded microseconds are checked separately
-against every decoded image. Replay export preserves source references and root
-motion, converts surface and skeleton together, and validates artifact hashes.
-Assessment methods that are unavailable remain labelled unavailable even when
-reconstruction succeeds. Barefoot close-ups do not produce a full-body replay.
+Historical barefoot sessions remain readable. Walking review replaces barefoot
+capture for new tests.
 
-### API request examples
+## How a recording becomes a replay
 
-`CAPTURE_MANIFEST` and `CAPTURE_ZIP` identify a capture manifest and flat ZIP.
-Use protocol ID `elk`, `rtk` or `walking`, matching test type, and version `1.0`.
-Historical `barefoot` captures and results remain supported. Walking full-body
-takes use condition `exercise` and anatomical side `not_applicable`.
-These identify capture contracts, not clinically evaluated protocols.
+1. **Quest captures the source.** Unity and Meta's camera tools save the recording,
+   its camera metadata, and the original frame timestamps.
+2. **Python manages processing.** An authenticated FastAPI module validates uploads,
+   preserves job state, and invokes the configured reconstruction command.
+3. **Research models fit the motion.** Person tracking, ViTPose, HMR2, camera-motion
+   estimation, and GVHMR produce a fitted SMPL-X body and joints on a CUDA GPU.
+4. **Quest loads the result.** The exporter validates geometry and source mappings.
+   The headset pairs replay controls with observations tied to the same take.
 
-```sh
-export CAPTURE_MANIFEST=/path/to/capture_manifest.json
-export CAPTURE_ZIP=/path/to/capture.zip
-export IDEMPOTENCY_KEY="$(uv run --locked python -c 'import uuid; print(uuid.uuid4())')"
+The [processing contract](docs/openapi.yaml) is the shared interface between the
+Quest app and processing. [GPU setup](processing/reconstruction/GPU_SETUP.md)
+documents the model environment separately from the local Python environment.
 
-curl --fail-with-body -i http://127.0.0.1:8000/v1/jobs \
-  -H "Authorization: Bearer $PROCESSING_TOKEN" \
-  -H "Idempotency-Key: $IDEMPOTENCY_KEY" \
-  --form-string "manifest=$(cat "$CAPTURE_MANIFEST")" \
-  --form "media=@$CAPTURE_ZIP;type=application/zip"
+## Inference experiments
 
-# Set JOB_ID from the accepted response. Keep the same key for network retries.
-curl --fail-with-body "http://127.0.0.1:8000/v1/jobs/$JOB_ID" \
-  -H "Authorization: Bearer $PROCESSING_TOKEN"
-curl --fail-with-body "http://127.0.0.1:8000/v1/jobs/$JOB_ID/result" \
-  -H "Authorization: Bearer $PROCESSING_TOKEN"
-curl --fail-with-body "http://127.0.0.1:8000/v1/jobs/$JOB_ID/artifacts/$ARTIFACT_ID" \
-  -H "Authorization: Bearer $PROCESSING_TOKEN" --output /tmp/replay-artifact
-```
+The [checked-in streaming experiment](experiments/streaming_inference/rtx3070-640-15.json)
+uses an eight-second prerecorded input on an RTX 3070. With models already loaded,
+it measures the time from input stopping to a decode-verified annotated video:
 
-Poll at `Retry-After` while active. A deliberate reprocessing attempt uses a new
-key and keeps the original capture/result version. Failed or incomplete jobs
-return 409 from result/artifact routes. Verify artifact size and SHA-256 against
-the result inventory before loading it.
+| Mode | Time after input stopped |
+|---|---:|
+| Start processing after input stops | 9.99 seconds |
+| Process arriving chunks in sequence | 3.79 seconds |
+| Process arriving chunks with camera-motion work on the CPU in parallel | 3.56 seconds |
 
-Default ceilings: 512 MiB ZIP, 1 MiB upload manifest, 1 GiB expanded files,
-64 members, eight takes, 16 MiB metadata, 256 MiB decoded replay, 1 GiB result
-output, 8 GiB private storage and a 120-second upload deadline. The service
-reserves storage before acceptance and returns retryable 429 when busy/full.
-It never deletes accepted recordings to free space. Upload validation checks ZIP
-contents and MP4 signatures; the inference/microscope adapters additionally bound
-decoding and verify frame/time correspondence before producing their outputs.
+Input arrives in four two-second chunks. These results exclude model startup,
+Quest encoding, network transfer, and headset loading. The production processor
+starts a command for each reconstruction and does not use the streaming runner.
 
-## Build and verify
+The website's [2.27-second summary](docs/media/benchmark.json) describes a separate
+run with half-second chunks. Its runner and raw event files are not included here.
+The [engineering guide](docs/ENGINEERING.md#what-the-benchmark-measures) explains
+the distinction.
 
-The [Quest guide](quest/README.md) contains the Unity build, device procedure and
-C# checks. The [fixture guide](tests/contracts/fixtures/README.md) describes the
-small authored contract fixture; it contains no participant or anatomical model.
+## What is verified, and what remains
 
-```sh
-uv sync --locked --python 3.11 --extra microscope
-uv run --locked --extra microscope python -m processing.contracts validate tests/contracts/fixtures
-uv run --locked --extra microscope pytest --cov=processing --cov-report=term-missing -q
-uv run --locked --extra microscope ruff check processing tests
-uv run --locked --extra microscope pip-audit --progress-spinner off
-```
+The [project status](docs/STATUS.md) lists implemented behavior and remaining
+acceptance work. The code includes capture, saved patient history, reconstruction,
+replay, and source-linked movement observations.
 
-Tests include a real loopback upload → poll → download → restart flow, using
-synthetic inputs and a test-only worker. CPU tests cover model orchestration and
-real codec timestamps; they do not establish CUDA/model accuracy. On-device input,
-real-video reconstruction and held-out assessment evaluation remain separate gates.
+The remaining work includes:
 
-## Required demonstration
+- A fresh, timed capture-to-headset replay and full wearer acceptance. The whole-path
+  target is one to two minutes after the last capture.
+- Evaluated ELK and RTK findings and clinical gait assessment on unseen participants.
+- A useful motion microscope result from a real Quest steady-hold recording.
+  The microscope remains required and incomplete.
 
-1. Select a patient and ELK seated flank stretch, RTK seated rotation or Walking review.
-2. Confirm consent and follow the capture guidance. Keep original recordings.
-3. Process and load the saved result. The **1–2 minute** whole-path target remains unmeasured.
-4. Walk around the body, scrub, reverse, step frames, change speed and manipulate its display.
-5. Open estimated movement observations and their actual source moments. Evaluated findings have separate availability; unsupported methods explain their status.
-6. Add a separate steady-hold take for microscope inspection and reopen dated tests from history.
+## Run and contribute
 
-Walking review replaces new barefoot capture by user request. It reports fitted
-pose estimates with explicit limitations; saved foot records keep their original
-identity and unavailable automated-assessment status. Motion magnification can
-amplify recording artifacts and requires a useful, verified steady-hold result.
+Read the [engineering guide](docs/ENGINEERING.md) for the implemented architecture,
+module interfaces, data and coordinate mappings, job lifecycle, and verification
+limits. Use the [developer guide](docs/DEVELOPMENT.md) for local processing,
+configuration, request examples, and automated checks. Real reconstruction needs
+the separate [GPU setup](processing/reconstruction/GPU_SETUP.md). An unconfigured
+full-body reconstruction retains the recording and reports the failure. Historical
+barefoot-only jobs can complete with unavailable analysis because they do not
+require a replay.
 
-| Document | Purpose |
+| Path | What is inside |
 |---|---|
-| [Specification](docs/SPEC.md) | Accepted scope, invariants and acceptance criteria. |
-| [Session handoff](docs/HANDOFF.md) | Current branch, verified results, blockers and next task. |
-| [Processing API](docs/openapi.yaml) | Upload, job status, results and artifact contracts. |
-| [Quest guide](quest/README.md) | App structure, checks, build and device evidence. |
-| [GPU setup](processing/reconstruction/GPU_SETUP.md) | Pinned model/assets, standalone inference and original GPU proof. |
-| [Agent instructions](AGENTS.md) | Project working rules. |
+| [`quest/`](quest/README.md) | Unity capture, patient history, spatial review, and device checks. |
+| [`processing/`](processing/) | Uploads, persistent jobs, reconstruction, analysis, and replay export. |
+| [`tests/`](tests/) | Backend, contract, and model-adapter checks. |
+| [`experiments/`](experiments/) | Profiling and inference experiments, with their own evidence. |
+| [`design/`](design/quest-menu/README.md) | Archived mockups and an unused navigation prototype. |
+| [`docs/`](docs/) | Product requirements, implementation guides, status, and media sources. |
 
-The original deadline is **September 27, 2026, 10:00 a.m. America/Toronto**.
-Do not commit participant recordings, identifying profile data, model weights,
-credentials or restricted datasets. New sessions should read the handoff,
-specification and API contract before continuing the next incomplete milestone.
+[Product specification](docs/SPEC.md) ·
+[Engineering guide](docs/ENGINEERING.md) ·
+[Quest build guide](quest/README.md) ·
+[Project status](docs/STATUS.md) ·
+[Media sources](docs/media/README.md)
+
+## The team
+
+| Builder | Focus |
+|---|---|
+| [Bader](https://github.com/B2707) | Backend and integration |
+| [Mohammad](https://github.com/MohammadESteitieh) | Reconstruction and analysis |
+| [Hamza](https://github.com/HamzaAlsarakbi) | Quest application |
+| [Mustafa](https://github.com/mustafahelmyh) | Design |
+
+Participant recordings, credentials, model weights, and restricted datasets stay
+out of Git. The explicitly included public project film is presentation media.
+Third-party models and assets retain their own terms, listed in the
+[GPU guide](processing/reconstruction/GPU_SETUP.md#externally-mounted-assets-and-terms) and
+[asset provenance files](quest/Assets/Physio/Art/).

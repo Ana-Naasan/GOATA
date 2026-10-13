@@ -1,0 +1,30 @@
+{
+  "project": "N3 Goata",
+  "scope": "Local public-video experiment. Not Quest network-to-display or clinical validation.",
+  "source_playback_seconds": 8.008,
+  "source_frames": 240,
+  "original": {
+    "clock_start": "Complete local input accepted",
+    "first_segment_ready_seconds": 33.32361196700003,
+    "all_output_ready_seconds": 119.9667745830011
+  },
+  "optimized": {
+    "gpu": "NVIDIA RTX 3070",
+    "analysis_dimensions": [640, 360],
+    "observations_per_second": 15,
+    "ingress_chunk_seconds": 0.5,
+    "precision": "FP16 pose and features; other models FP32",
+    "models": "All five resident and warmed before capture",
+    "scheduled_capture_seconds": 8.0,
+    "wait_after_capture_seconds": [2.2628140789965983, 2.274549378998927, 2.2781751709990203],
+    "median_wait_after_capture_seconds": 2.274549378998927,
+    "median_capture_start_to_verified_video_seconds": 10.274549378998927,
+    "readiness": "Annotated video closed and decode-verified"
+  },
+  "exclusions": ["Quest encoding and network transfer", "Headset loading and display", "Watching the output", "One-time warmup before capture"],
+  "interpretation": "Streaming work overlaps input arrival. Post-capture waiting is not total inference duration. No generalization to other recordings is claimed.",
+  "evidence": {
+    "original_events_sha256": "796033d14c8e822ad050c7ae6ba79352197dabbb4867b79dd029c389d1da5df6",
+    "optimized_measurement_sha256": "35c6d3d8ffff87a1a9faae26caa554b57d94573caf53440cd7eeedd31b0a9748"
+  }
+}
